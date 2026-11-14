@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- 개발용 빌드에서만: 에뮬레이터에서 경로를 요청해 내비 안내 값을 검증하기 위함. release에는 포함되지 않는다 -->
+    <uses-permission android:name="pleos.car.permission.NAVI_ROUTE_SEARCH" />
+
+</manifest>

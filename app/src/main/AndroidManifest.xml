@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- 읽기 전용 권한만 선언 (요구서: 차량을 제어하지 않는다) -->
+    <uses-permission android:name="pleos.car.permission.CAR_DRIVE" />
+    <uses-permission android:name="pleos.car.permission.CAR_POWERTRAIN" />
+    <uses-permission android:name="pleos.car.permission.CAR_LIGHTS" />
+    <uses-permission android:name="pleos.car.permission.READ_CAR_STEERING" />
+    <!-- 내비 회전 안내(TBT) 읽기 -->
+    <uses-permission android:name="pleos.car.permission.NAVI_ROUTE" />
+
+    <application
+        android:allowBackup="false"
+        android:label="이세계주행천재"
+        android:theme="@android:style/Theme.Material.Light.NoActionBar">
+        <!-- DO(주행 최적화)를 선언하지 않는다: 센터 화면에서는 주행 중 자동 차단 -->
+        <activity
+            android:name=".MainActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+
+</manifest>
