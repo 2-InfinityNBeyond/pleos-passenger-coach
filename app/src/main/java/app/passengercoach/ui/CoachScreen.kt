@@ -64,6 +64,16 @@ private val CardColor = Color(0xFFFFFFFF)
 /** 이 너비 이상이면 가로 배치, 미만이면 세로 배치 */
 private val WIDE_MIN_WIDTH = 640.dp
 
+/** 해설이 "방금 일"로 보이는 시간, 화면에 남는 시간(밀리초) */
+private const val MESSAGE_FRESH_MS = 8_000L
+private const val MESSAGE_CLEAR_MS = 30_000L
+
+/** 지금 값을 다시 물어보는 간격. 끊김 기준(DriveState.STALE_MS)보다 짧아야 한다 */
+private const val PING_MS = 4_000L
+
+/** 시작 뒤 이 시간까지는 "차량 신호 없음" 대신 "연결하는 중"으로 보여 준다 */
+private const val CONNECTING_MS = 3_000L
+
 /** 첫 실행 동의 여부에 따라 안내(S0) 또는 실시간 화면(S2)을 보여 준다. */
 @Composable
 fun CoachRoot(
@@ -114,17 +124,26 @@ private fun CoachApp(hub: SignalHub, navi: NaviHub, demo: DemoPlayer) {
 
     val engine = remember(demoOn) { CoachEngine() }
     var message by remember(demoOn) { mutableStateOf<String?>(null) }
+    var messageAtMs by remember(demoOn) { mutableLongStateOf(0L) }
     LaunchedEffect(Unit) {
         while (true) {
             now = System.currentTimeMillis()
             delay(500)
         }
     }
-    LaunchedEffect(demoOn) { if (demoOn) demo.run() }
+    LaunchedEffect(demoOn) {
+        if (demoOn) demo.run()
+        // 값이 안 바뀐 것과 신호가 끊긴 것을 구분하려고 주기적으로 지금 값을 다시 물어본다
+        while (true) {
+            delay(PING_MS)
+            hub.ping()
+        }
+    }
     LaunchedEffect(demoOn) {
         (if (demoOn) demo.signals else hub.state).collect { s ->
             engine.onSignals(s.steeringDeg, s.brakeOn, s.turn.toDir(), s.gear.toKind(), System.currentTimeMillis())?.let {
                 message = it
+                messageAtMs = System.currentTimeMillis()
                 dlog("Coach") { "MESSAGE $it" }
             }
         }
@@ -136,7 +155,9 @@ private fun CoachApp(hub: SignalHub, navi: NaviHub, demo: DemoPlayer) {
     CoachScreen(
         s = signals,
         n = naviSnapshot,
-        message = message,
+        // 오래된 해설을 지금 일처럼 보이지 않게: 잠시 뒤 흐리게, 더 지나면 지운다
+        message = message.takeIf { now - messageAtMs < MESSAGE_CLEAR_MS },
+        messageOld = now - messageAtMs > MESSAGE_FRESH_MS,
         demoOn = demoOn,
         now = now,
         onRetry = {
@@ -158,6 +179,7 @@ private fun CoachScreen(
     s: SignalSnapshot,
     n: NaviSnapshot,
     message: String?,
+    messageOld: Boolean,
     demoOn: Boolean,
     now: Long,
     onRetry: () -> Unit,
@@ -185,7 +207,9 @@ private fun CoachScreen(
                 if (demoOn) Text("시험 자료(데모)", fontSize = 18.sp, color = Color(0xFFB45309), fontWeight = FontWeight.Bold)
                 Text(stateLabel(s), fontSize = 30.sp, fontWeight = FontWeight.Bold, color = if (stale) MutedColor else Color.Unspecified)
             }
-            if (noSignal) {
+            if (noSignal && now - s.startedAtMs < CONNECTING_MS) {
+                Text("차량에 연결하는 중", fontSize = 40.sp, fontWeight = FontWeight.Bold, color = MutedColor)
+            } else if (noSignal) {
                 Text("차량 신호 없음", fontSize = 40.sp, fontWeight = FontWeight.Bold, color = MutedColor)
                 s.error?.let { Text(it, fontSize = 16.sp, color = MutedColor) }
                 Button(onClick = onRetry) { Text("다시 시도", fontSize = 22.sp) }
@@ -209,7 +233,7 @@ private fun CoachScreen(
                     TurnCard(s, stale)
                     BrakeCard(s, stale)
                 }
-                CoachCard(message, dim = stale)
+                CoachCard(message, dim = stale || messageOld)
             }
         }
     }
@@ -236,9 +260,10 @@ private fun NaviCard(n: NaviSnapshot, dim: Boolean) {
         Text("내비 다음 안내", fontSize = 20.sp)
         val turn = n.turn
         if (turn == null) {
-            Text("내비 안내 없음", fontSize = 28.sp, fontWeight = FontWeight.Bold, color = MutedColor)
+            // 경로가 없는 것과 내비 정보를 못 받는 것을 구분한다
+            Text(if (!n.ready && n.error != null) "내비 정보를 받을 수 없어요" else "내비 안내 없음", fontSize = 28.sp, fontWeight = FontWeight.Bold, color = MutedColor)
         } else {
-            val dist = n.turnDistanceM?.let { "  ${it.roundToInt()}m" } ?: ""
+            val dist = n.turnDistanceM?.let { if (it >= 1000) "  %.1fkm".format(it / 1000) else "  ${it.roundToInt()}m" } ?: ""
             Text(turnLabel(turn, n.turnText) + dist, fontSize = 32.sp, fontWeight = FontWeight.Bold, color = if (dim) MutedColor else Color.Unspecified)
         }
     }

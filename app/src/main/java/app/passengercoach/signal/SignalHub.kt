@@ -33,6 +33,8 @@ data class SignalSnapshot(
     val error: String? = null,
     /** 차량이 읽기를 지원하지 않는다고 확인된 신호 키("steering", "brake", "turn", "gear") */
     val unsupported: Set<String> = emptySet(),
+    /** 연결을 시작한 시각(밀리초). 시작 직후를 "연결하는 중"으로 보여 주는 데 쓴다 */
+    val startedAtMs: Long = 0L,
 ) {
     /** 어느 신호든 가장 최근에 값을 받은 시각(밀리초). 한 번도 못 받았으면 0 */
     fun lastUpdateMs(): Long = maxOf(steeringAtMs, brakeAtMs, turnAtMs, gearAtMs)
@@ -70,11 +72,18 @@ class SignalHub(private val context: Context) {
     fun start() {
         if (started) return
         started = true
+        mutableState.update { it.copy(startedAtMs = System.currentTimeMillis()) }
         connect(attempt = 0)
     }
 
     fun stop() {
         main.removeCallbacksAndMessages(null)
+        // 연결에 실패해 vehicle이 없어도 다시 시작할 수 있어야 한다
+        started = false
+        releaseVehicle()
+    }
+
+    private fun releaseVehicle() {
         val v = vehicle ?: return
         runCatching { v.getSteeringWheel().unregisterSteeringWheelAngle(steeringListener) }
         runCatching { v.getBrake().unregisterBrakePedalStatus(brakeListener) }
@@ -82,20 +91,30 @@ class SignalHub(private val context: Context) {
         runCatching { v.getGear().unregisterGearSelection(gearListener) }
         runCatching { v.release() }
         vehicle = null
-        started = false
     }
 
-    /** "다시 시도" 버튼용: 구독을 정리하고 처음부터 연결한다. */
+    /** "다시 시도" 버튼용: 구독을 정리하고 값도 비운 뒤 처음부터 연결한다. */
     fun restart() {
         stop()
+        mutableState.value = SignalSnapshot()
         start()
+    }
+
+    /**
+     * 값이 한동안 안 바뀌었을 때 지금 값을 다시 물어본다. 응답이 오면 받은 시각이 갱신되고,
+     * 응답이 없으면 화면이 "차량 신호 없음"으로 바뀐다(값이 안 바뀐 것과 끊긴 것을 구분).
+     */
+    fun ping() {
+        val v = vehicle ?: return
+        runCatching { readCurrent(v) }
     }
 
     private fun connect(attempt: Int) {
         try {
+            releaseVehicle()
             val v = Vehicle(context)
-            v.initialize()
             vehicle = v
+            v.initialize()
             v.getSteeringWheel().registerSteeringWheelAngle(steeringListener)
             v.getBrake().registerBrakePedalStatus(brakeListener)
             v.getTurnSignal().registerTurnSignalState(turnListener)

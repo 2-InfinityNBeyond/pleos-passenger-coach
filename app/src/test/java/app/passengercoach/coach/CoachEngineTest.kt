@@ -120,6 +120,26 @@ class CoachEngineTest {
     }
 
     @Test
+    fun `같은 방향의 다음 안내는 앞 안내의 시각을 이어 쓰지 않는다`() {
+        val e = CoachEngine()
+        e.feed(at = 0)
+        e.onNavi(NaviTurnKind.LEFT, distanceM = 80.0, nowMs = 1_000)
+        e.onNavi(NaviTurnKind.LEFT, distanceM = 2_000.0, nowMs = 10_000)
+        assertEquals("왼쪽 깜빡이를 켰어요.", e.feed(turn = TurnDir.LEFT, at = 60_000))
+        e.feed(turn = TurnDir.OFF, at = 61_000)
+        e.onNavi(NaviTurnKind.LEFT, distanceM = 250.0, nowMs = 100_000)
+        assertEquals("내비가 좌회전을 안내하고 3초 뒤, 왼쪽 깜빡이를 켰어요.", e.feed(turn = TurnDir.LEFT, at = 103_000))
+    }
+
+    @Test
+    fun `가운데를 거치지 않고 반대쪽으로 돌려도 해설한다`() {
+        val e = CoachEngine()
+        e.feed(at = 0)
+        assertEquals("핸들을 왼쪽으로 돌렸어요.", e.feed(steering = 40f, at = 1_000))
+        assertEquals("핸들을 오른쪽으로 돌렸어요.", e.feed(steering = -40f, at = 2_000))
+    }
+
+    @Test
     fun `아직 멀리 있는 안내와 깜빡이는 시차를 말하지 않는다`() {
         val e = CoachEngine()
         e.feed(at = 0)

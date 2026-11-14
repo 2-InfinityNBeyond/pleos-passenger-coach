@@ -22,6 +22,7 @@ class CoachEngine {
 
     private var steeringSeen = false
     private var wheel = Wheel.CENTER
+    private var wheelDir = TurnDir.OFF
 
     private var turnOnAtMs = 0L
     private var turnOnDir = TurnDir.OFF
@@ -29,6 +30,7 @@ class CoachEngine {
 
     private var naviKind: NaviTurnKind? = null
     private var naviSinceMs = 0L
+    private var naviDistanceM = Double.MAX_VALUE
 
     /**
      * 내비 안내가 [NAVI_NEAR_M] 이내로 가까워진 시점을 기억한다(안내 → 깜빡이 시차 계산용).
@@ -40,12 +42,11 @@ class CoachEngine {
             return
         }
         val near = distanceM != null && distanceM <= NAVI_NEAR_M
-        if (kind != naviKind) {
-            naviKind = kind
-            naviSinceMs = if (near) nowMs else 0L
-        } else if (naviSinceMs == 0L && near) {
-            naviSinceMs = nowMs
-        }
+        // 거리가 다시 늘었으면 같은 방향이라도 다음 안내로 넘어간 것이다
+        val nextGuide = kind != naviKind || (distanceM != null && distanceM > naviDistanceM + NAVI_JUMP_M)
+        naviKind = kind
+        naviDistanceM = distanceM ?: Double.MAX_VALUE
+        if (!near) naviSinceMs = 0L else if (nextGuide || naviSinceMs == 0L) naviSinceMs = nowMs
     }
 
     /** 새 신호를 반영하고, 해설할 일이 생겼으면 문장을 돌려준다. 없으면 null. */
@@ -86,6 +87,9 @@ class CoachEngine {
         if (steeringDeg != null) {
             val size = abs(steeringDeg)
             val dir = if (steeringDeg > 0f) TurnDir.LEFT else TurnDir.RIGHT
+            // 가운데를 거친 값 없이 반대쪽으로 넘어가면 새로 돌린 것으로 본다
+            if (steeringSeen && wheel != Wheel.CENTER && dir != wheelDir && size >= STEER_SMALL_DEG) wheel = Wheel.CENTER
+            if (size > STEER_CENTER_DEG) wheelDir = dir
             if (!steeringSeen) {
                 // 첫 관측은 해설하지 않고 기준만 잡는다
                 steeringSeen = true
@@ -142,6 +146,9 @@ class CoachEngine {
 
         /** 내비 안내가 이 거리(미터) 이내일 때부터 "안내한 뒤" 시간을 잰다. 임시값 */
         const val NAVI_NEAR_M = 300.0
+
+        /** 남은 거리가 이만큼(미터) 넘게 늘면 다음 안내로 본다(위치 흔들림과 구분). 임시값 */
+        const val NAVI_JUMP_M = 50.0
 
         /** 깜빡이를 켠 뒤 핸들 조작을 같은 동작으로 묶는 시간(밀리초) */
         const val LINK_WINDOW_MS = 10_000L
