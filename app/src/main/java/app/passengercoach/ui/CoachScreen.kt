@@ -71,6 +71,8 @@ import app.passengercoach.demo.DemoPlayer
 import app.passengercoach.signal.NaviHub
 import app.passengercoach.signal.NaviSnapshot
 import app.passengercoach.signal.SignalHub
+import app.passengercoach.signal.RoadHub
+import app.passengercoach.signal.RouteHub
 import app.passengercoach.signal.TrafficLightHub
 import app.passengercoach.coach.LightColor
 import app.passengercoach.coach.LightInfo
@@ -87,30 +89,31 @@ import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
+// 색은 디자인 시안 "소프트 팝"을 따른다(낮: 연한 회보라 바탕 + 보라 강조, 밤: 짙은 남색 바탕)
 private val LightColors = lightColorScheme(
-    background = Color(0xFFF4F6FA),
-    onBackground = Color(0xFF111827),
+    background = Color(0xFFF3F2F8),
+    onBackground = Color(0xFF17162B),
     surface = Color(0xFFFFFFFF),
-    onSurface = Color(0xFF111827),
+    onSurface = Color(0xFF17162B),
     // 밝은 바탕 위에서 글자 대비 4.5:1 이상을 맞춘 회색
-    onSurfaceVariant = Color(0xFF5B6270),
-    primary = Color(0xFF1F3A8A),
+    onSurfaceVariant = Color(0xFF5F5E76),
+    primary = Color(0xFF5B4BFF),
     onPrimary = Color(0xFFFFFFFF),
     tertiary = Color(0xFFB45309),
-    outline = Color(0xFFB0B5BD),
+    outline = Color(0xFFB9B8CC),
 )
 
 // 야간 화면: 밤에 밝은 화면이 운전자 눈에 거슬리지 않게 어두운 바탕을 쓴다(차량의 야간 모드를 따른다)
 private val DarkColors = darkColorScheme(
-    background = Color(0xFF0B0F17),
-    onBackground = Color(0xFFE5E7EB),
-    surface = Color(0xFF1A2130),
-    onSurface = Color(0xFFE5E7EB),
-    onSurfaceVariant = Color(0xFF9AA3B2),
-    primary = Color(0xFF8FB0FF),
-    onPrimary = Color(0xFF0B0F17),
+    background = Color(0xFF0C0C14),
+    onBackground = Color(0xFFF1F0FA),
+    surface = Color(0xFF191927),
+    onSurface = Color(0xFFF1F0FA),
+    onSurfaceVariant = Color(0xFFA9A8C2),
+    primary = Color(0xFF8F86FF),
+    onPrimary = Color(0xFF0C0C14),
     tertiary = Color(0xFFF59E0B),
-    outline = Color(0xFF4B5563),
+    outline = Color(0xFF4B4A63),
 )
 
 private val MutedColor: Color
@@ -131,7 +134,7 @@ private const val PING_MS = 4_000L
 /** 시작 뒤 이 시간까지는 "차량 신호 없음" 대신 "연결하는 중"으로 보여 준다 */
 private const val CONNECTING_MS = 3_000L
 
-private enum class Page { MAIN, SETTINGS, RECORDS }
+private enum class Page { MAIN, SETTINGS, RECORDS, ASKS }
 
 /** 연습 상황: 고른 상황의 해설만 보여 준다. 주행 전에 고르고, 주행 중에는 입력을 요구하지 않는다 */
 private enum class Topic(val label: String, val filter: CoachTopic?) {
@@ -151,11 +154,13 @@ fun CoachRoot(
     hub: SignalHub,
     navi: NaviHub,
     lights: TrafficLightHub,
+    routes: RouteHub,
+    roads: RoadHub,
     demo: DemoPlayer,
 ) {
     MaterialTheme(colorScheme = if (isSystemInDarkTheme()) DarkColors else LightColors) {
         Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-            if (consented) CoachApp(hub, navi, lights, demo, onWithdraw) else ConsentScreen(onAgree)
+            if (consented) CoachApp(hub, navi, lights, routes, roads, demo, onWithdraw) else ConsentScreen(onAgree)
         }
     }
 }
@@ -165,26 +170,25 @@ private fun ConsentScreen(onAgree: () -> Unit) {
     var declined by remember { mutableStateOf(false) }
     var driverOk by remember { mutableStateOf(false) }
     Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(32.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 32.dp, vertical = 20.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Text("이세계주행천재", fontSize = 30.sp, fontWeight = FontWeight.Bold)
-        Text("동승자를 위한 운전 학습 화면", fontSize = 20.sp, color = MutedColor)
+        Text("눈치코치", fontSize = 30.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+        Text("옆자리에서 보고 배우는 운전", fontSize = 18.sp, color = MutedColor)
+        // 한 화면에 들어오도록 네 줄로 줄였다. 빠진 내용은 없다(보여 주는 것, 내보내는 것, 저장과 철회, 책임)
         listOf(
-            "운전자의 핸들, 브레이크, 방향지시등, 기어와 내비 안내를 동승자 화면에 보여 줘요.",
-            "차량을 제어하지 않고, 운전자 화면에는 표시되지 않아요.",
-            "차량 데이터는 이 기기 밖으로 보내지 않아요. 학습 기록은 설정에서 켠 경우에만 이 기기에 저장해요.",
-            "교육을 돕는 도구예요. 실제 운전의 책임은 운전자에게 있어요.",
-            "신호등 정보는 공공데이터에서 받아요. 이때 차량 위치는 보내지 않아요.",
-            "동의는 설정에서 언제든 철회할 수 있어요.",
-        ).forEach { Text("• $it", fontSize = 20.sp) }
+            "운전자의 조작(핸들, 브레이크, 깜빡이, 기어)과 내비 안내를 이 화면에 보여 줘요. 차를 제어하지 않아요.",
+            "조작 데이터는 기기 밖으로 보내지 않아요. 지도와 길을 그리려고 현재 위치와 목적지만 보내요.",
+            "학습 기록은 켠 경우에만 이 기기에 저장해요. 동의는 설정에서 언제든 철회할 수 있어요.",
+            "배움을 돕는 도구예요. 운전의 책임은 운전자에게 있어요.",
+        ).forEach { Text("• $it", fontSize = 18.sp) }
         // 조작이 화면에 보이는 사람은 운전자이므로, 운전자의 동의를 따로 받는다
         Row(
             Modifier.clickable { driverOk = !driverOk },
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Checkbox(checked = driverOk, onCheckedChange = { driverOk = it })
-            Text("운전자: 내 조작이 동승자 화면에 보이는 것에 동의해요. (운전자가 직접 눌러 주세요)", fontSize = 20.sp)
+            Text("운전자: 내 조작이 이 화면에 보이는 것에 동의해요. (운전자가 직접 눌러 주세요)", fontSize = 18.sp)
         }
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Button(onClick = onAgree, enabled = driverOk) { Text("동의하고 시작", fontSize = 22.sp) }
@@ -196,7 +200,7 @@ private fun ConsentScreen(onAgree: () -> Unit) {
 }
 
 @Composable
-private fun CoachApp(hub: SignalHub, navi: NaviHub, lights: TrafficLightHub, demo: DemoPlayer, onWithdraw: () -> Unit) {
+private fun CoachApp(hub: SignalHub, navi: NaviHub, lights: TrafficLightHub, routes: RouteHub, roads: RoadHub, demo: DemoPlayer, onWithdraw: () -> Unit) {
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences("coach", Context.MODE_PRIVATE) }
     val records = remember { RecordStore(File(context.filesDir, RecordStore.FILE_NAME)) }
@@ -204,6 +208,12 @@ private fun CoachApp(hub: SignalHub, navi: NaviHub, lights: TrafficLightHub, dem
     var topic by remember { mutableStateOf(Topic.entries.getOrElse(prefs.getInt("topic", 0)) { Topic.ALL }) }
     var coachMode by remember { mutableStateOf(prefs.getBoolean("coach_mode", false)) }
     var recordOn by remember { mutableStateOf(prefs.getBoolean("record_on", false)) }
+    // 이전 화면(글자 위주)을 남겨 두고 설정에서 고를 수 있게 한다
+    var classicUi by remember { mutableStateOf(prefs.getBoolean("classic_ui", false)) }
+    // "물어볼 것": 궁금한 순간을 한 번 눌러 남겨 두었다가 주차한 뒤에 본다
+    val asks = remember { RecordStore(File(context.filesDir, RecordStore.ASKS_FILE)) }
+    var asked by remember { mutableIntStateOf(0) }
+    LaunchedEffect(Unit) { asked = withContext(Dispatchers.IO) { runCatching { asks.load().size }.getOrDefault(0) } }
     val topicNow by rememberUpdatedState(topic)
     val recordNow by rememberUpdatedState(recordOn)
 
@@ -216,7 +226,16 @@ private fun CoachApp(hub: SignalHub, navi: NaviHub, lights: TrafficLightHub, dem
 
     val light by key(demoOn) { (if (demoOn) demo.light else lights.state).collectAsState() }
     // 가까운 교차로는 기기 안에서 찾는다. 위치를 밖으로 보내지 않는다
-    LaunchedEffect(Unit) { navi.state.collect { lights.onLocation(it.lat, it.lon, it.heading) } }
+    LaunchedEffect(Unit) {
+        navi.state.collect {
+            lights.onLocation(it.lat, it.lon, it.heading)
+            routes.onNavi(it.lat, it.lon, it.destLat, it.destLon, it.routeEpoch)
+        }
+    }
+    val route by key(demoOn) { (if (demoOn) demo.route else routes.state).collectAsState() }
+    // 주변 길 모양은 지금 보여 주는 위치(실제 또는 데모) 기준으로 받는다
+    val roadList by roads.state.collectAsState()
+    LaunchedEffect(naviSnapshot.lat, naviSnapshot.lon) { roads.onLocation(naviSnapshot.lat, naviSnapshot.lon) }
 
     val engine = remember(demoOn) { CoachEngine() }
     var message by remember(demoOn) { mutableStateOf<String?>(null) }
@@ -277,42 +296,60 @@ private fun CoachApp(hub: SignalHub, navi: NaviHub, lights: TrafficLightHub, dem
                 prefs.edit().putBoolean("record_on", it).apply()
             },
             onRecords = { page = Page.RECORDS },
+            onAsks = { page = Page.ASKS },
+            classicUi = classicUi,
+            onClassicUi = {
+                classicUi = it
+                prefs.edit().putBoolean("classic_ui", it).apply()
+            },
             onWithdraw = onWithdraw,
             onBack = { page = Page.MAIN },
         )
-        Page.RECORDS -> RecordsScreen(records, onBack = { page = Page.SETTINGS })
-        Page.MAIN -> CoachScreen(
-            s = signals,
-            n = naviSnapshot,
-            light = light,
+        Page.RECORDS -> RecordsScreen(records, "학습 기록", "기록이 없어요. 설정에서 학습 기록을 켜면 해설이 여기에 쌓여요.", onBack = { page = Page.SETTINGS })
+        Page.ASKS -> RecordsScreen(asks, "물어볼 것", "아직 없어요. 주행 화면의 ? 버튼을 누르면 그 순간이 여기에 남아요.", onBack = { page = Page.SETTINGS }, onCleared = { asked = 0 })
+        Page.MAIN -> {
             // 오래된 해설을 지금 일처럼 보이지 않게: 잠시 뒤 흐리게, 더 지나면 지운다
-            message = message.takeIf { now - messageAtMs < MESSAGE_CLEAR_MS },
-            // 코치 모드: 강사가 직접 설명하므로 설명 줄을 숨긴다
-            why = why.takeIf { !coachMode },
+            val shownMessage = message.takeIf { now - messageAtMs < MESSAGE_CLEAR_MS }
+            // 코치 모드: 강사가 직접 설명하므로 설명 줄과 알아 두기를 숨긴다
+            val shownWhy = why.takeIf { !coachMode }
             // 멈춰 있을 때(주차, 정차)는 방금 한 조작을 순서대로 되짚는다
-            recap = recap.update(signals.gear == VehicleGear.GEAR_PARK || DriveState.isStopped(signals.gear.toKind(), signals.brakeOn, signals.steeringDeg)),
-            // 상황에 맞는 알아 두기. 코치 모드에서는 강사가 직접 설명하므로 숨긴다
-            tip = tipPicker.pick(signals.gear.toKind(), signals.brakeOn, signals.steeringDeg, naviSnapshot.turn.toNaviKind(), naviSnapshot.turnDistanceM)
-                ?.takeIf { !coachMode }?.let { TipPicker.tip(it) },
-            messageOld = now - messageAtMs > MESSAGE_FRESH_MS,
-            demoOn = demoOn,
-            now = now,
-            onRetry = {
+            val still = signals.gear == VehicleGear.GEAR_PARK || DriveState.isStopped(signals.gear.toKind(), signals.brakeOn, signals.steeringDeg)
+            val shownRecap = recap.update(still)
+            val shownTip = tipPicker.pick(signals.gear.toKind(), signals.brakeOn, signals.steeringDeg, naviSnapshot.turn.toNaviKind(), naviSnapshot.turnDistanceM)
+                ?.takeIf { !coachMode }?.let { TipPicker.tip(it) }
+            val messageOld = now - messageAtMs > MESSAGE_FRESH_MS
+            val onRetry = {
                 hub.restart()
                 navi.restart()
-            },
-            onTitleTap = {
+            }
+            val onDemoTap = {
                 taps += 1
                 if (taps >= 5) {
                     taps = 0
                     demoOn = !demoOn
                 }
-            },
-            onSettings = { page = Page.SETTINGS },
-        )
+            }
+            if (classicUi) {
+                CoachScreen(
+                    s = signals, n = naviSnapshot, light = light, message = shownMessage, why = shownWhy, recap = shownRecap, tip = shownTip,
+                    messageOld = messageOld, demoOn = demoOn, now = now, onRetry = onRetry, onTitleTap = onDemoTap, onSettings = { page = Page.SETTINGS },
+                )
+            } else {
+                CockpitScreen(
+                    s = signals, n = naviSnapshot, light = light, roads = roadList, route = route, message = shownMessage, why = shownWhy, messageOld = messageOld,
+                    recap = shownRecap, tip = shownTip, still = still, demoOn = demoOn, now = now, asked = asked,
+                    onRetry = onRetry, onDemoTap = onDemoTap, onSettings = { page = Page.SETTINGS },
+                    onAsk = {
+                        // 그 순간에 보이던 해설을 남긴다. 해설이 없으면 시각만 남는다
+                        val at = System.currentTimeMillis()
+                        asked += 1
+                        asks.add(at, shownMessage ?: "표시한 순간")
+                    },
+                )
+            }
+        }
     }
 }
-
 @Composable
 private fun SettingsScreen(
     topic: Topic,
@@ -322,6 +359,9 @@ private fun SettingsScreen(
     recordOn: Boolean,
     onRecordOn: (Boolean) -> Unit,
     onRecords: () -> Unit,
+    onAsks: () -> Unit,
+    classicUi: Boolean,
+    onClassicUi: (Boolean) -> Unit,
     onWithdraw: () -> Unit,
     onBack: () -> Unit,
 ) {
@@ -345,7 +385,11 @@ private fun SettingsScreen(
 
         SwitchRow("코치 모드", "설명 줄을 숨기고 일어난 일만 보여 줘요. 강사가 직접 설명할 때 써요.", coachMode, onCoachMode)
         SwitchRow("학습 기록", "해설 문장과 시각을 이 기기 안에만 저장해요. 밖으로 보내지 않아요.", recordOn, onRecordOn)
-        OutlinedButton(onClick = onRecords) { Text("학습 기록 보기", fontSize = 20.sp) }
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            OutlinedButton(onClick = onRecords) { Text("학습 기록 보기", fontSize = 20.sp) }
+            OutlinedButton(onClick = onAsks) { Text("물어볼 것 보기", fontSize = 20.sp) }
+        }
+        SwitchRow("이전 화면 쓰기", "지도와 계기판 대신 글자 위주의 이전 화면을 보여 줘요.", classicUi, onClassicUi)
 
         Text("동의", fontSize = 22.sp, fontWeight = FontWeight.Bold)
         if (!confirmWithdraw) {
@@ -372,7 +416,7 @@ private fun SwitchRow(title: String, description: String, checked: Boolean, onCh
 }
 
 @Composable
-private fun RecordsScreen(records: RecordStore, onBack: () -> Unit) {
+private fun RecordsScreen(records: RecordStore, title: String, emptyText: String, onBack: () -> Unit, onCleared: () -> Unit = {}) {
     var list by remember { mutableStateOf(emptyList<Record>()) }
     LaunchedEffect(Unit) { list = withContext(Dispatchers.IO) { runCatching { records.load() }.getOrDefault(emptyList()) } }
     val format = remember { SimpleDateFormat("M월 d일 HH:mm:ss", Locale.KOREA) }
@@ -381,16 +425,17 @@ private fun RecordsScreen(records: RecordStore, onBack: () -> Unit) {
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            Text("학습 기록", fontSize = 26.sp, fontWeight = FontWeight.Bold)
+            Text(title, fontSize = 26.sp, fontWeight = FontWeight.Bold)
             Button(onClick = onBack) { Text("돌아가기", fontSize = 20.sp) }
         }
         if (list.isEmpty()) {
-            Text("기록이 없어요. 설정에서 학습 기록을 켜면 해설이 여기에 쌓여요.", fontSize = 20.sp, color = MutedColor)
+            Text(emptyText, fontSize = 20.sp, color = MutedColor)
         } else {
             Text("최근 ${list.size}개 · 이 기기 안에만 있어요", fontSize = 18.sp, color = MutedColor)
             OutlinedButton(onClick = {
                 records.clear()
                 list = emptyList()
+                onCleared()
             }) { Text("모두 지우기", fontSize = 20.sp) }
             list.asReversed().forEach { r ->
                 Column {
@@ -436,7 +481,7 @@ private fun CoachScreen(
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Text("이세계주행천재", fontSize = 26.sp, fontWeight = FontWeight.Bold, modifier = Modifier.clickable(onClick = onTitleTap))
+                Text("눈치코치", fontSize = 26.sp, fontWeight = FontWeight.Bold, modifier = Modifier.clickable(onClick = onTitleTap))
                 if (demoOn) Text("시험 자료(데모)", fontSize = 18.sp, color = MaterialTheme.colorScheme.tertiary, fontWeight = FontWeight.Bold)
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(stateLabel(s), fontSize = 30.sp, fontWeight = FontWeight.Bold, color = if (stale) MutedColor else Color.Unspecified)
@@ -660,7 +705,7 @@ private fun BrakeCard(s: SignalSnapshot, dim: Boolean) {
 
 private fun unsupportedText(name: String) = "이 차량은 $name 신호를 제공하지 않아요"
 
-private fun angleLabel(angle: Float?): String {
+internal fun angleLabel(angle: Float?): String {
     if (angle == null) return "-"
     val deg = abs(angle).roundToInt()
     return when {

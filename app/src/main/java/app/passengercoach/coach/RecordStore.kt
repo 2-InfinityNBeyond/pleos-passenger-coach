@@ -30,6 +30,9 @@ class RecordStore(private val file: File) {
 
     companion object {
         const val FILE_NAME = "records.tsv"
+
+        /** "물어볼 것"으로 표시한 순간을 따로 담는 파일 */
+        const val ASKS_FILE = "asks.tsv"
         const val MAX = 300
         const val TRIM_BYTES = 64_000L
     }

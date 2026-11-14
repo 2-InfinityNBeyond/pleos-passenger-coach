@@ -43,11 +43,18 @@ android {
         if (f.exists()) f.inputStream().use { load(it) }
     }.getProperty("SIGNAL_API_KEY", "")
 
+    val routeKey: String = Properties().apply {
+        val f = rootProject.file("local.properties")
+        if (f.exists()) f.inputStream().use { load(it) }
+    }.getProperty("ROUTE_API_KEY", "")
+
     buildTypes {
         debug {
             buildConfigField("String", "SIGNAL_API_KEY", "\"$signalKey\"")
+            buildConfigField("String", "ROUTE_API_KEY", "\"$routeKey\"")
         }
         release {
+            buildConfigField("String", "ROUTE_API_KEY", "\"\"")
             // shortcut: 공개 저장소에 올리는 release APK에는 키를 넣지 않는다(APK에서 키를 꺼낼 수 있음). 키 공개를 결정하면 signalKey로 바꾼다
             buildConfigField("String", "SIGNAL_API_KEY", "\"\"")
             isMinifyEnabled = false

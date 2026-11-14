@@ -13,12 +13,13 @@
     <!-- 내비 회전 안내(TBT) 읽기 -->
     <uses-permission android:name="pleos.car.permission.NAVI_ROUTE" />
 
-    <!-- 신호등 공공데이터 받기. 차량 데이터와 위치는 보내지 않는다 -->
+    <!-- 신호등 공공데이터, 지도 그림, 지도 경로 받기. 차량 조작 데이터는 보내지 않는다(경로 계산에는 현재 위치와 목적지를 보낸다) -->
     <uses-permission android:name="android.permission.INTERNET" />
 
     <application
         android:allowBackup="false"
-        android:label="이세계주행천재"
+        android:icon="@mipmap/ic_launcher"
+        android:label="눈치코치"
         android:theme="@android:style/Theme.Material.Light.NoActionBar">
         <!-- DO(주행 최적화)를 선언하지 않는다: 센터 화면에서는 주행 중 자동 차단 -->
         <activity

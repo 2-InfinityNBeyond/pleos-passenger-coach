@@ -17,6 +17,8 @@ import app.passengercoach.demo.DemoPlayer
 import java.io.File
 import app.passengercoach.signal.NaviHub
 import app.passengercoach.signal.SignalHub
+import app.passengercoach.signal.RoadHub
+import app.passengercoach.signal.RouteHub
 import app.passengercoach.signal.TrafficLightHub
 import app.passengercoach.ui.CoachRoot
 
@@ -24,6 +26,8 @@ class MainActivity : ComponentActivity() {
     private lateinit var hub: SignalHub
     private lateinit var navi: NaviHub
     private val lights = TrafficLightHub(BuildConfig.SIGNAL_API_KEY)
+    private val routes = RouteHub(BuildConfig.ROUTE_API_KEY)
+    private lateinit var roads: RoadHub
     private val demo = DemoPlayer()
 
     private var consented by mutableStateOf(false)
@@ -45,6 +49,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         hub = SignalHub(applicationContext)
         navi = NaviHub(applicationContext)
+        roads = RoadHub(cacheDir)
         consented = getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(KEY_CONSENT, false)
         setContent {
             CoachRoot(
@@ -59,13 +64,18 @@ class MainActivity : ComponentActivity() {
                     hub.stop()
                     navi.stop()
                     lights.stop()
+                    routes.stop()
+                    roads.stop()
                     getSharedPreferences(PREFS, MODE_PRIVATE).edit().clear().apply()
                     RecordStore(File(filesDir, RecordStore.FILE_NAME)).clear()
+                    RecordStore(File(filesDir, RecordStore.ASKS_FILE)).clear()
                     consented = false
                 },
                 hub = hub,
                 navi = navi,
                 lights = lights,
+                routes = routes,
+                roads = roads,
                 demo = demo,
             )
         }
@@ -96,6 +106,8 @@ class MainActivity : ComponentActivity() {
         navi.stop()
         hub.stop()
         lights.stop()
+        routes.stop()
+        roads.stop()
         super.onDestroy()
     }
 
@@ -103,11 +115,13 @@ class MainActivity : ComponentActivity() {
         hub.start()
         navi.start()
         lights.start()
+        routes.start()
+        roads.start()
     }
 
     private companion object {
         const val PREFS = "coach"
-        const val KEY_CONSENT = "consent_v3"
+        const val KEY_CONSENT = "consent_v5"
         const val ACTION_LOCATION = "app.passengercoach.DEBUG_LOCATION"
     }
 }
