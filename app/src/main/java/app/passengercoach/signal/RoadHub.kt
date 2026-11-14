@@ -77,14 +77,7 @@ class RoadHub(private val cacheDir: File) {
         // 같은 자리의 길 모양은 바뀌지 않으므로 한 번 받은 것은 기기에 두고 다시 쓴다(공용 서버가 자주 느리다)
         val cache = File(cacheDir, "roads_${lat}_$lon.json")
         val body = if (cache.exists()) cache.readText() else download(lat, lon).also { runCatching { cache.writeText(it) } }
-        val elements = JSONObject(body).getJSONArray("elements")
-        val roads = ArrayList<Road>(elements.length())
-        for (i in 0 until elements.length()) {
-            val e = elements.getJSONObject(i)
-            val g = e.optJSONArray("geometry") ?: continue
-            val points = (0 until g.length()).map { LatLon(g.getJSONObject(it).getDouble("lat"), g.getJSONObject(it).getDouble("lon")) }
-            roads += Road(points, MapMath.levelOf(e.optJSONObject("tags")?.optString("highway").orEmpty()))
-        }
+        val roads = parse(body)
         fetchedAt = p
         mutableState.value = roads
         dlog(TAG) { "ROADS ways=${roads.size} cached=${cache.exists()}" }
@@ -111,19 +104,32 @@ class RoadHub(private val cacheDir: File) {
         }
     }
 
-    private companion object {
-        const val TAG = "RoadLab"
-        val SERVERS = listOf(
+    companion object {
+        /** Overpass 응답(JSON)을 길 목록으로 바꾼다. 앱에 넣어 둔 데모 구간 자료를 읽는 데도 쓴다 */
+        fun parse(body: String): List<Road> {
+            val elements = JSONObject(body).getJSONArray("elements")
+            val roads = ArrayList<Road>(elements.length())
+            for (i in 0 until elements.length()) {
+                val e = elements.getJSONObject(i)
+                val g = e.optJSONArray("geometry") ?: continue
+                val points = (0 until g.length()).map { LatLon(g.getJSONObject(it).getDouble("lat"), g.getJSONObject(it).getDouble("lon")) }
+                roads += Road(points, MapMath.levelOf(e.optJSONObject("tags")?.optString("highway").orEmpty()))
+            }
+            return roads
+        }
+
+        private const val TAG = "RoadLab"
+        private val SERVERS = listOf(
             "https://overpass-api.de/api/interpreter",
             "https://overpass.kumi.systems/api/interpreter",
             "https://overpass.private.coffee/api/interpreter",
         )
-        const val KINDS = "motorway|trunk|primary|secondary|tertiary|residential|unclassified|living_street|service"
-        const val RADIUS_M = 600
+        private const val KINDS = "motorway|trunk|primary|secondary|tertiary|residential|unclassified|living_street|service"
+        private const val RADIUS_M = 600
 
         /** 받은 자리에서 이만큼 벗어나면 다시 받는다 */
-        const val REFETCH_M = 300.0
-        const val CHECK_MS = 2_000L
-        const val RETRY_MS = 6_000L
+        private const val REFETCH_M = 300.0
+        private const val CHECK_MS = 2_000L
+        private const val RETRY_MS = 6_000L
     }
 }

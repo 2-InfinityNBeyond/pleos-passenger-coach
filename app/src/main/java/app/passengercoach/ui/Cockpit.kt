@@ -9,6 +9,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -125,7 +126,10 @@ internal fun CockpitScreen(
     val stale = DriveState.isStale(demoOn, !noSignal, last, now)
     val reversing = s.gear == VehicleGear.GEAR_REVERSE
 
-    Column(Modifier.fillMaxSize().background(c.bg).padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    // 좁은 창(세로로 긴 화면, 나눠 쓰는 창)에서는 핸들을 줄이고 각도 숫자를 뺀다
+    BoxWithConstraints(Modifier.fillMaxSize().background(c.bg)) {
+    val compact = maxWidth < 600.dp
+    Column(Modifier.fillMaxSize().padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Box(Modifier.weight(1f).fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(c.mapBase)) {
             if (reversing) {
                 RearView(s.steeringDeg ?: 0f, moving = s.brakeOn == false, demo = demoOn, modifier = Modifier.fillMaxSize())
@@ -137,6 +141,14 @@ internal fun CockpitScreen(
             }
 
             Column(Modifier.align(Alignment.TopEnd).padding(14.dp), horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                // 상태 알림은 오른쪽 위에 모아서 다음 안내 칩과 겹치지 않게 한다
+                if (stale) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Pill("차량 신호 없음 · ${((now - last) / 1000).toInt()}초 전", c.red, Color.White)
+                        Pill("다시 시도", c.card, c.text, Modifier.clickable(role = Role.Button, onClick = onRetry))
+                    }
+                }
+                if (demoOn) Pill("시험 자료(데모)", c.ask, c.askText)
                 if (light != null) LightChips(light, now, c)
                 n.speedLimit?.let { SpeedSign(it, c) }
                 RoadSigns.nearest(n.signs)?.let { Pill("${it.label} ${distanceText(it.distanceM.toDouble())}", c.card, c.text) }
@@ -181,13 +193,6 @@ internal fun CockpitScreen(
                 }
             }
 
-            if (demoOn) Pill("시험 자료(데모)", c.ask, c.askText, Modifier.align(Alignment.TopCenter).padding(top = 14.dp))
-            if (stale) {
-                Row(Modifier.align(Alignment.TopCenter).padding(top = 14.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Pill("차량 신호 없음 · ${((now - last) / 1000).toInt()}초 전", c.red, Color.White)
-                    Pill("다시 시도", c.card, c.text, Modifier.clickable(role = Role.Button, onClick = onRetry))
-                }
-            }
             if (noSignal) {
                 Column(
                     Modifier.fillMaxSize().background(c.bg.copy(alpha = 0.92f)),
@@ -207,14 +212,14 @@ internal fun CockpitScreen(
         Row(Modifier.fillMaxWidth().height(150.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(
                 Modifier.weight(1f).fillMaxHeight().background(c.card, RoundedCornerShape(24.dp)).padding(horizontal = 14.dp),
-                horizontalArrangement = Arrangement.spacedBy(18.dp, Alignment.CenterHorizontally), verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(if (compact) 8.dp else 18.dp, Alignment.CenterHorizontally), verticalAlignment = Alignment.CenterVertically,
             ) {
                 val blink = (now / 500) % 2 == 0L
                 val both = s.turn != null && s.turn != TurnSignalValue.LEFT && s.turn != TurnSignalValue.RIGHT && s.turn != TurnSignalValue.OFF
                 Blinker(left = true, on = s.turn == TurnSignalValue.LEFT || both, lit = blink, c = c)
-                CockpitWheel(s.steeringDeg, 126.dp, if (stale) c.offGlyph else c.text, c.accent)
+                CockpitWheel(s.steeringDeg, if (compact) 100.dp else 126.dp, if (stale) c.offGlyph else c.text, c.accent)
                 Blinker(left = false, on = s.turn == TurnSignalValue.RIGHT || both, lit = blink, c = c)
-                AngleReadout(s.steeringDeg, c)
+                if (!compact) AngleReadout(s.steeringDeg, c)
             }
             Column(
                 Modifier.width(92.dp).fillMaxHeight().background(c.card, RoundedCornerShape(24.dp)),
@@ -269,6 +274,7 @@ internal fun CockpitScreen(
             }
         }
     }
+    }
 }
 
 @Composable
@@ -309,6 +315,8 @@ private fun LightChips(light: LightInfo, now: Long, c: CockpitColors) {
     ) {
         LightPart(TurnType.TURN_STRAIGHT, light.straight, light.atMs, now, c)
         LightPart(TurnType.TURN_LEFT, light.left, light.atMs, now, c)
+        // 제공 기관 고지: 실제 신호와 다를 수 있어 참고용이라고 화면에 밝힌다
+        Text("참고", fontSize = 11.sp, color = c.muted)
     }
 }
 

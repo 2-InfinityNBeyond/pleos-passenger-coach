@@ -134,6 +134,9 @@ private const val PING_MS = 4_000L
 /** 시작 뒤 이 시간까지는 "차량 신호 없음" 대신 "연결하는 중"으로 보여 준다 */
 private const val CONNECTING_MS = 3_000L
 
+/** 줄 세워 둔 해설을 이어서 말할 때 두는 틈(앞 문장을 읽을 시간) */
+private const val EXTRA_GAP_MS = 1_200L
+
 private enum class Page { MAIN, SETTINGS, RECORDS, ASKS }
 
 /** 연습 상황: 고른 상황의 해설만 보여 준다. 주행 전에 고르고, 주행 중에는 입력을 요구하지 않는다 */
@@ -234,8 +237,11 @@ private fun CoachApp(hub: SignalHub, navi: NaviHub, lights: TrafficLightHub, rou
     }
     val route by key(demoOn) { (if (demoOn) demo.route else routes.state).collectAsState() }
     // 주변 길 모양은 지금 보여 주는 위치(실제 또는 데모) 기준으로 받는다
-    val roadList by roads.state.collectAsState()
-    LaunchedEffect(naviSnapshot.lat, naviSnapshot.lon) { roads.onLocation(naviSnapshot.lat, naviSnapshot.lon) }
+    // 데모 구간의 길은 앱에 넣어 둔 자료를 쓴다(공용 서버가 느려도 데모 지도가 비지 않게. © OpenStreetMap contributors)
+    val liveRoads by roads.state.collectAsState()
+    val demoRoads = remember { runCatching { RoadHub.parse(context.assets.open("demo_roads.json").bufferedReader().use { it.readText() }) }.getOrDefault(emptyList()) }
+    val roadList = if (demoOn) demoRoads else liveRoads
+    LaunchedEffect(naviSnapshot.lat, naviSnapshot.lon, demoOn) { if (!demoOn) roads.onLocation(naviSnapshot.lat, naviSnapshot.lon) }
 
     val engine = remember(demoOn) { CoachEngine() }
     var message by remember(demoOn) { mutableStateOf<String?>(null) }
@@ -257,14 +263,9 @@ private fun CoachApp(hub: SignalHub, navi: NaviHub, lights: TrafficLightHub, rou
             hub.ping()
         }
     }
-    LaunchedEffect(demoOn) {
-        (if (demoOn) demo.signals else hub.state).collect { s ->
-            val at = System.currentTimeMillis()
-            val text = engine.onSignals(s.steeringDeg, s.brakeOn, s.turn.toDir(), s.gear.toKind(), at)
-                ?: engine.onExtras(s.lowBeamOn, s.highBeamOn, s.wiperOn, s.beltWarning, s.doorOpen)
-                ?: return@collect
-            // 고른 연습 상황의 해설만 보여 준다
-            if (topicNow.filter != null && engine.topic != topicNow.filter) return@collect
+    // 해설 한 문장을 화면에 올린다. 고른 연습 상황의 해설만 보여 준다
+    val show: suspend (String, Long) -> Unit = { text, at ->
+        if (topicNow.filter == null || engine.topic == topicNow.filter) {
             message = text
             recap.add(text)
             why = engine.why
@@ -272,6 +273,22 @@ private fun CoachApp(hub: SignalHub, navi: NaviHub, lights: TrafficLightHub, rou
             dlog("Coach") { "MESSAGE $text" }
             // 시험 자료(데모)는 실제 조작이 아니므로 기록하지 않는다
             if (recordNow && !demoOn) withContext(Dispatchers.IO) { runCatching { records.add(at, text) } }
+        }
+    }
+    LaunchedEffect(demoOn) {
+        (if (demoOn) demo.signals else hub.state).collect { s ->
+            val at = System.currentTimeMillis()
+            // 전조등 같은 추가 조작은 기록만 해 두고, 아래에서 차례로 꺼내 말한다
+            engine.noteExtras(s.lowBeamOn, s.highBeamOn, s.wiperOn, s.beltWarning, s.doorOpen, at)
+            engine.onSignals(s.steeringDeg, s.brakeOn, s.turn.toDir(), s.gear.toKind(), at)?.let { show(it, at) }
+        }
+    }
+    // 여러 조작이 한꺼번에 바뀌면 한 문장씩 읽을 틈을 두고 이어서 말한다(한 번에 한 문장)
+    LaunchedEffect(demoOn) {
+        while (true) {
+            delay(EXTRA_GAP_MS)
+            val at = System.currentTimeMillis()
+            if (at - messageAtMs >= EXTRA_GAP_MS) engine.pollExtra(at)?.let { show(it, at) }
         }
     }
     LaunchedEffect(demoOn) {

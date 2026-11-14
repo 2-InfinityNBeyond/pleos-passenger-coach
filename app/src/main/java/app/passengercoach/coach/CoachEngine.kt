@@ -201,8 +201,13 @@ class CoachEngine {
 
     private val prevExtra = arrayOfNulls<Boolean>(5)
 
-    /** 전조등, 상향등, 와이퍼, 운전석 안전벨트 경고, 문 열림이 바뀌면 해설한다. 한 번에 하나만 말하고 나머지는 다음에 말한다. */
-    fun onExtras(lowBeamOn: Boolean?, highBeamOn: Boolean?, wiperOn: Boolean?, beltWarning: Boolean?, doorOpen: Boolean?): String? {
+    private val pendingExtra = ArrayDeque<Triple<String, String?, Long>>()
+
+    /**
+     * 전조등, 상향등, 와이퍼, 운전석 안전벨트 경고, 문 열림의 변화를 기록한다. 해설은 [pollExtra]로 하나씩 꺼낸다.
+     * 여러 신호가 한꺼번에 바뀌어도 상태를 놓치지 않도록, 모든 값을 매번 끝까지 반영하고 할 말은 줄을 세워 둔다.
+     */
+    fun noteExtras(lowBeamOn: Boolean?, highBeamOn: Boolean?, wiperOn: Boolean?, beltWarning: Boolean?, doorOpen: Boolean?, nowMs: Long = 0L) {
         val now = arrayOf(lowBeamOn, highBeamOn, wiperOn, beltWarning, doorOpen)
         for (i in now.indices) {
             val value = now[i] ?: continue
@@ -210,11 +215,25 @@ class CoachEngine {
             prevExtra[i] = value
             if (before == null || before == value) continue
             val (text, reason) = EXTRA_LINES[i][if (value) 0 else 1]
-            why = reason
-            topic = CoachTopic.DEVICE
-            return text
+            pendingExtra.addLast(Triple(text, reason, nowMs))
+            // 밀린 말이 쌓이면 오래된 것부터 버린다(지난 일을 뒤늦게 말하지 않으려고)
+            if (pendingExtra.size > MAX_PENDING) pendingExtra.removeFirst()
         }
-        return null
+    }
+
+    /** 줄 세워 둔 추가 조작 해설을 하나 꺼낸다. 없으면 null. 너무 늦은 것([EXTRA_STALE_MS] 지남)은 말하지 않고 버린다 */
+    fun pollExtra(nowMs: Long = 0L): String? {
+        while (nowMs > 0L && pendingExtra.isNotEmpty() && nowMs - pendingExtra.first().third > EXTRA_STALE_MS) pendingExtra.removeFirst()
+        val (text, reason) = pendingExtra.removeFirstOrNull() ?: return null
+        why = reason
+        topic = CoachTopic.DEVICE
+        return text
+    }
+
+    /** 기록하고 바로 하나 꺼낸다 */
+    fun onExtras(lowBeamOn: Boolean?, highBeamOn: Boolean?, wiperOn: Boolean?, beltWarning: Boolean?, doorOpen: Boolean?): String? {
+        noteExtras(lowBeamOn, highBeamOn, wiperOn, beltWarning, doorOpen)
+        return pollExtra()
     }
 
     /** 깜빡이를 켠 직후 같은 방향으로 핸들을 돌렸으면 한 동작으로 묶어 말한다. 차선 변경이라고 단정하지는 않는다. */
@@ -252,6 +271,10 @@ class CoachEngine {
             listOf("문이 열렸어요." to "문을 열기 전에는 뒤에서 오는 차와 자전거를 확인해요.", "문이 모두 닫혔어요." to null),
         )
 
+        private const val MAX_PENDING = 3
+
+        /** 줄 세워 둔 해설이 이보다 늦어지면 말하지 않는다(지난 일을 지금 일처럼 말하지 않으려고) */
+        const val EXTRA_STALE_MS = 5_000L
         private const val STEER_WHY = "핸들을 돌린 쪽으로 차가 방향을 바꿔요."
         private const val REVERSE_WHY = "후진할 때는 핸들을 돌린 쪽으로 차 뒤쪽이 움직여요."
 

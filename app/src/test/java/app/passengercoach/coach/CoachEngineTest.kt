@@ -231,6 +231,32 @@ class CoachEngineTest {
     }
 
     @Test
+    fun `여러 신호가 한꺼번에 바뀌어도 상태를 놓치지 않는다`() {
+        // 데모 반복 검사에서 찾은 결함: 기어와 함께 안전벨트, 전조등이 바뀌면 안전벨트 상태를 놓쳐 다음 해설이 빠졌다
+        val e = CoachEngine()
+        e.noteExtras(true, false, false, false, false)
+        assertNull(e.pollExtra())
+        // 한 번에: 전조등 꺼짐 + 안전벨트 풀림
+        e.noteExtras(false, false, false, true, false)
+        assertEquals("전조등을 껐어요.", e.pollExtra())
+        assertEquals("운전석 안전벨트가 풀렸어요.", e.pollExtra())
+        assertNull(e.pollExtra())
+        e.noteExtras(false, false, false, false, false)
+        assertEquals("운전자가 안전벨트를 맸어요.", e.pollExtra())
+    }
+
+    @Test
+    fun `너무 늦어진 추가 조작 해설은 말하지 않는다`() {
+        val e = CoachEngine()
+        e.noteExtras(false, false, false, false, false, nowMs = 1_000)
+        e.noteExtras(true, false, false, false, false, nowMs = 2_000)
+        e.noteExtras(true, false, true, false, false, nowMs = 9_000)
+        // 전조등(2초)은 5초 넘게 밀려서 버리고, 와이퍼(9초)만 말한다
+        assertEquals("와이퍼를 켰어요.", e.pollExtra(nowMs = 9_500))
+        assertNull(e.pollExtra(nowMs = 9_600))
+    }
+
+    @Test
     fun `멈추면 방금 한 조작을 순서대로 되짚고 다시 움직이면 비운다`() {
         val r = Recap()
         listOf("가", "나", "다", "라", "마").forEach { r.add(it) }

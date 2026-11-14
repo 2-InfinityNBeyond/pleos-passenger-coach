@@ -69,7 +69,8 @@ fun RearView(steeringDeg: Float, moving: Boolean, demo: Boolean, modifier: Modif
             "후방 화면 · 시뮬레이션",
             fontSize = 14.sp,
             color = Color.White,
-            modifier = Modifier.align(Alignment.TopStart).padding(6.dp).background(Color(0x99000000), RoundedCornerShape(6.dp)).padding(horizontal = 6.dp, vertical = 2.dp),
+            // 왼쪽 위에는 알아 두기가 놓이므로 가려지지 않게 왼쪽 아래에 둔다
+            modifier = Modifier.align(Alignment.BottomStart).padding(8.dp).background(Color(0x99000000), RoundedCornerShape(6.dp)).padding(horizontal = 6.dp, vertical = 2.dp),
         )
     }
 }
