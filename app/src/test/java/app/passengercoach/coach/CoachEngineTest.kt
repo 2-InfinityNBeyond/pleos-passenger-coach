@@ -192,6 +192,32 @@ class CoachEngineTest {
     }
 
     @Test
+    fun `후진 주차는 핸들을 돌린 양과 브레이크를 떼는 순서를 해설한다`() {
+        val e = CoachEngine()
+        e.feed(gear = GearKind.DRIVE, brake = true, at = 0)
+        assertEquals("기어를 D(주행)에서 R(후진)로 바꿨어요.", e.feed(gear = GearKind.REVERSE, brake = true, at = 1_000))
+        assertEquals(CoachTopic.PARK, e.topic)
+        assertEquals("핸들을 왼쪽으로 반 바퀴 돌렸어요.", e.feed(gear = GearKind.REVERSE, brake = true, steering = 200f, at = 2_000))
+        assertEquals("핸들을 왼쪽으로 한 바퀴 돌렸어요.", e.feed(gear = GearKind.REVERSE, brake = true, steering = 365f, at = 3_000))
+        assertNull(e.feed(gear = GearKind.REVERSE, brake = true, steering = 350f, at = 3_500))
+        assertEquals("핸들을 왼쪽으로 한 바퀴 돌려 놓고 브레이크를 뗐어요.", e.feed(gear = GearKind.REVERSE, brake = false, steering = 350f, at = 4_000))
+        assertEquals("후진할 때는 핸들을 돌린 쪽으로 차 뒤쪽이 움직여요.", e.why)
+        assertEquals("돌렸던 핸들을 다시 풀고 있어요.", e.feed(gear = GearKind.REVERSE, steering = 250f, at = 5_000))
+        assertNull(e.feed(gear = GearKind.REVERSE, steering = 120f, at = 5_500))
+        assertEquals("핸들이 다시 가운데로 돌아왔어요.", e.feed(gear = GearKind.REVERSE, steering = 0f, at = 6_000))
+    }
+
+    @Test
+    fun `반 바퀴 경계에서 값이 흔들려도 같은 말을 반복하지 않는다`() {
+        val e = CoachEngine()
+        e.feed(at = 0)
+        e.feed(steering = 30f, at = 500)
+        assertEquals("핸들을 왼쪽으로 반 바퀴 돌렸어요.", e.feed(steering = 182f, at = 1_000))
+        assertNull(e.feed(steering = 178f, at = 1_100))
+        assertNull(e.feed(steering = 183f, at = 1_200))
+    }
+
+    @Test
     fun `값이 없는 신호는 무시한다`() {
         val e = CoachEngine()
         e.feed(at = 0)

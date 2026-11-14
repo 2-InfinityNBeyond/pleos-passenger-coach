@@ -6,10 +6,10 @@ enum class TurnDir { OFF, LEFT, RIGHT }
 
 enum class GearKind { PARK, NEUTRAL, REVERSE, DRIVE, OTHER }
 
-enum class NaviTurnKind { LEFT, RIGHT, OTHER }
+enum class NaviTurnKind { LEFT, RIGHT, UTURN, OTHER }
 
-/** 해설이 속한 연습 상황: 회전(깜빡이, 핸들) 또는 출발과 정차(브레이크, 기어) */
-enum class CoachTopic { TURN, STOP }
+/** 해설이 속한 연습 상황: 회전(깜빡이, 핸들), 출발과 정차(브레이크, 기어), 주차(기어 R에서 일어난 모든 조작) */
+enum class CoachTopic { TURN, STOP, PARK }
 
 /**
  * 코치 해설 규칙(요구서 F2 이벤트 감지, F3 코치 해설).
@@ -26,6 +26,12 @@ class CoachEngine {
     private var steeringSeen = false
     private var wheel = Wheel.CENTER
     private var wheelDir = TurnDir.OFF
+
+    // 크게 돌리는 조작(주차, 유턴)용: 마지막으로 알린 반 바퀴 수, 가장 많이 돌린 각도, 풀기 시작을 알렸는지
+    private var turnStep = 0
+    private var peak = 0f
+    private var unwindSaid = false
+    private var lastSteer = 0f
 
     private var turnOnAtMs = 0L
     private var turnOnDir = TurnDir.OFF
@@ -85,6 +91,14 @@ class CoachEngine {
                 message = if (brakeOn) "브레이크를 밟았어요." else "브레이크를 뗐어요."
                 reason = if (brakeOn) "브레이크는 속도를 줄이거나 멈출 때 밟아요." else "브레이크에서 발을 떼면 차가 다시 움직일 수 있어요."
                 kind = CoachTopic.STOP
+                // 주차의 핵심 순서: 핸들을 먼저 돌려 놓고 브레이크를 떼서 움직인다
+                val held = steeringDeg ?: lastSteer
+                if (!brakeOn && prevGear == GearKind.REVERSE && abs(held) >= PARK_HOLD_DEG) {
+                    // 방금 알린 바퀴 수와 어긋나지 않게(한 바퀴를 알린 뒤 350도에서 반 바퀴라고 하지 않게) 알린 값을 우선한다
+                    val amount = maxOf(turnStep, (abs(held) / HALF_TURN_DEG).toInt()).let { if (it >= 1) turnsLabel(it) + " " else "" }
+                    message = "핸들을 ${dirName(if (held > 0f) TurnDir.LEFT else TurnDir.RIGHT)}으로 ${amount}돌려 놓고 브레이크를 뗐어요."
+                    reason = REVERSE_WHY
+                }
             }
             prevBrake = brakeOn
         }
@@ -110,7 +124,9 @@ class CoachEngine {
             val size = abs(steeringDeg)
             val dir = if (steeringDeg > 0f) TurnDir.LEFT else TurnDir.RIGHT
             // 가운데를 거친 값 없이 반대쪽으로 넘어가면 새로 돌린 것으로 본다
-            if (steeringSeen && wheel != Wheel.CENTER && dir != wheelDir && size >= STEER_SMALL_DEG) wheel = Wheel.CENTER
+            val first = !steeringSeen
+            val flipped = !first && wheel != Wheel.CENTER && dir != wheelDir && size >= STEER_SMALL_DEG
+            if (flipped) wheel = Wheel.CENTER
             if (size > STEER_CENTER_DEG) wheelDir = dir
             if (!steeringSeen) {
                 // 첫 관측은 해설하지 않고 기준만 잡는다
@@ -134,10 +150,43 @@ class CoachEngine {
                 kind = CoachTopic.TURN
                 wheel = Wheel.SMALL
             }
+
+            // 크게 돌리는 조작(주차, 유턴): 반 바퀴 단위로 알리고, 다시 풀기 시작하면 한 번 알린다
+            val step = (size / HALF_TURN_DEG).toInt()
+            if (first) {
+                turnStep = step
+                peak = size
+            } else {
+                if (flipped || size <= STEER_CENTER_DEG) {
+                    turnStep = 0
+                    peak = 0f
+                    unwindSaid = false
+                }
+                if (step > turnStep) {
+                    message = "핸들을 ${dirName(dir)}으로 ${turnsLabel(step)} 돌렸어요."
+                    reason = STEER_WHY
+                    kind = CoachTopic.TURN
+                    turnStep = step
+                    unwindSaid = false
+                } else if (size < turnStep * HALF_TURN_DEG - STEP_BACK_DEG) {
+                    // 경계 각도에서 값이 흔들릴 때 같은 말을 반복하지 않게 여유를 둔다
+                    turnStep = step
+                }
+                if (!unwindSaid && peak >= HALF_TURN_DEG && size <= peak - UNWIND_DEG && size > STEER_CENTER_DEG) {
+                    message = "돌렸던 핸들을 다시 풀고 있어요."
+                    reason = "핸들을 풀면 차가 다시 곧게 가요."
+                    kind = CoachTopic.TURN
+                    unwindSaid = true
+                }
+                if (unwindSaid || size > peak) peak = size
+            }
+            lastSteer = steeringDeg
         }
         if (message != null) {
-            why = reason
-            topic = kind
+            // 후진 중에는 차 뒤쪽이 어디로 가는지가 핵심이므로 핸들 설명을 바꾸고, 주차 상황으로 분류한다
+            val reversing = prevGear == GearKind.REVERSE
+            why = if (reversing && reason == STEER_WHY) REVERSE_WHY else reason
+            topic = if (reversing) CoachTopic.PARK else kind
         }
         return message
     }
@@ -177,6 +226,28 @@ class CoachEngine {
 
     companion object {
         private const val STEER_WHY = "핸들을 돌린 쪽으로 차가 방향을 바꿔요."
+        private const val REVERSE_WHY = "후진할 때는 핸들을 돌린 쪽으로 차 뒤쪽이 움직여요."
+
+        /** 핸들 반 바퀴(도) */
+        const val HALF_TURN_DEG = 180f
+
+        /** 후진에서 "돌려 놓고 브레이크를 뗐다"고 보는 핸들 각도. 임시값 */
+        const val PARK_HOLD_DEG = 90f
+
+        /** 가장 많이 돌린 각도에서 이만큼 되돌리면 "풀고 있다"고 본다. 임시값 */
+        const val UNWIND_DEG = 90f
+        private const val STEP_BACK_DEG = 30f
+
+        /** 반 바퀴 수를 말로: 1 → 반 바퀴, 2 → 한 바퀴, 3 → 한 바퀴 반 */
+        fun turnsLabel(halfTurns: Int): String {
+            val whole = when (halfTurns / 2) {
+                0 -> ""
+                1 -> "한 바퀴"
+                2 -> "두 바퀴"
+                else -> "${halfTurns / 2}바퀴"
+            }
+            return if (halfTurns % 2 == 0) whole else if (whole.isEmpty()) "반 바퀴" else "$whole 반"
+        }
 
         // shortcut: 아래 각도는 실차 데이터 없이 정한 임시값(센서 흔들림 약 ±1~2도 가정). 실차 측정 뒤 조정
         /** 핸들이 "돌아갔다"고 보는 각도(절댓값) */

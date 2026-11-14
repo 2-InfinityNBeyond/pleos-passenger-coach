@@ -56,6 +56,8 @@ import app.passengercoach.coach.CoachEngine
 import app.passengercoach.coach.CoachTopic
 import app.passengercoach.coach.Record
 import app.passengercoach.coach.RecordStore
+import app.passengercoach.coach.Tip
+import app.passengercoach.coach.TipPicker
 import app.passengercoach.coach.DriveState
 import app.passengercoach.coach.GearKind
 import app.passengercoach.coach.NaviTurnKind
@@ -126,6 +128,7 @@ private enum class Topic(val label: String, val filter: CoachTopic?) {
     ALL("전체", null),
     TURN("회전 (깜빡이, 핸들)", CoachTopic.TURN),
     STOP("출발과 정차 (브레이크, 기어)", CoachTopic.STOP),
+    PARK("주차 (후진)", CoachTopic.PARK),
 }
 
 /** 첫 실행 동의 여부에 따라 안내(S0) 또는 실시간 화면(S2)을 보여 준다. */
@@ -201,6 +204,7 @@ private fun CoachApp(hub: SignalHub, navi: NaviHub, demo: DemoPlayer, onWithdraw
     var message by remember(demoOn) { mutableStateOf<String?>(null) }
     var messageAtMs by remember(demoOn) { mutableLongStateOf(0L) }
     var why by remember(demoOn) { mutableStateOf<String?>(null) }
+    val tipPicker = remember(demoOn) { TipPicker() }
     LaunchedEffect(Unit) {
         while (true) {
             now = System.currentTimeMillis()
@@ -262,6 +266,9 @@ private fun CoachApp(hub: SignalHub, navi: NaviHub, demo: DemoPlayer, onWithdraw
             message = message.takeIf { now - messageAtMs < MESSAGE_CLEAR_MS },
             // 코치 모드: 강사가 직접 설명하므로 설명 줄을 숨긴다
             why = why.takeIf { !coachMode },
+            // 상황에 맞는 알아 두기. 코치 모드에서는 강사가 직접 설명하므로 숨긴다
+            tip = tipPicker.pick(signals.gear.toKind(), signals.brakeOn, signals.steeringDeg, naviSnapshot.turn.toNaviKind(), naviSnapshot.turnDistanceM)
+                ?.takeIf { !coachMode }?.let { TipPicker.tip(it) },
             messageOld = now - messageAtMs > MESSAGE_FRESH_MS,
             demoOn = demoOn,
             now = now,
@@ -376,6 +383,7 @@ private fun CoachScreen(
     n: NaviSnapshot,
     message: String?,
     why: String?,
+    tip: Tip?,
     messageOld: Boolean,
     demoOn: Boolean,
     now: Long,
@@ -397,8 +405,8 @@ private fun CoachScreen(
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val wide = maxWidth >= WIDE_MIN_WIDTH
         Column(
-            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
+            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Text("이세계주행천재", fontSize = 26.sp, fontWeight = FontWeight.Bold, modifier = Modifier.clickable(onClick = onTitleTap))
@@ -419,22 +427,25 @@ private fun CoachScreen(
                     Text("차량 신호 없음 · 마지막 수신 ${staleSeconds}초 전", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = MutedColor)
                     Button(onClick = onRetry) { Text("다시 시도", fontSize = 22.sp) }
                 }
-                NaviCard(n, dim = stale)
-                val wheelSize = if (wide) 170.dp else 130.dp
+                // 가로 배치: 해설과 알아 두기가 스크롤 없이 한 화면에 들어오도록 내비 안내를 오른쪽 열로 올린다
+                val wheelSize = if (wide) 140.dp else 130.dp
                 if (wide) {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(24.dp), verticalAlignment = Alignment.CenterVertically) {
                         SteeringCard(s, stale, wheelSize, Modifier.weight(1f))
-                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            NaviCard(n, dim = stale)
                             TurnCard(s, stale)
                             BrakeCard(s, stale)
                         }
                     }
                 } else {
+                    NaviCard(n, dim = stale)
                     SteeringCard(s, stale, wheelSize, Modifier.fillMaxWidth())
                     TurnCard(s, stale)
                     BrakeCard(s, stale)
                 }
                 CoachCard(message, why, dim = stale || messageOld)
+                if (tip != null && !stale) TipCard(tip)
             }
         }
     }
@@ -442,9 +453,9 @@ private fun CoachScreen(
 
 @Composable
 private fun CoachCard(message: String?, why: String?, dim: Boolean) {
-    Box(Modifier.fillMaxWidth().background(CardColor, RoundedCornerShape(12.dp)).padding(16.dp)) {
+    Box(Modifier.fillMaxWidth().background(CardColor, RoundedCornerShape(12.dp)).padding(horizontal = 16.dp, vertical = 10.dp)) {
         Column {
-            Text("해설", fontSize = 18.sp, color = MutedColor)
+            Text("해설", fontSize = 16.sp, color = MutedColor)
             Text(
                 message ?: "운전자의 조작이 감지되면 이곳에 한 문장으로 알려 줘요.",
                 fontSize = 26.sp,
@@ -452,6 +463,16 @@ private fun CoachCard(message: String?, why: String?, dim: Boolean) {
                 color = if (message == null || dim) MutedColor else Color.Unspecified,
             )
             if (message != null && why != null) Text(why, fontSize = 20.sp, color = MutedColor)
+        }
+    }
+}
+
+@Composable
+private fun TipCard(tip: Tip) {
+    Box(Modifier.fillMaxWidth().background(CardColor, RoundedCornerShape(12.dp)).padding(horizontal = 16.dp, vertical = 10.dp)) {
+        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text("알아 두기 · ${tip.title}", fontSize = 16.sp, color = MutedColor)
+            tip.lines.forEach { Text("• $it", fontSize = 18.sp) }
         }
     }
 }
@@ -542,8 +563,11 @@ private fun angleLabel(angle: Float?): String {
     val deg = abs(angle).roundToInt()
     return when {
         deg == 0 -> "가운데 0°"
-        angle > 0f -> "왼쪽 $deg°"
-        else -> "오른쪽 $deg°"
+        else -> {
+            // 주차처럼 크게 돌릴 때는 각도만으로 감이 안 오므로 바퀴 수를 함께 보여 준다
+            val turns = (abs(angle) / CoachEngine.HALF_TURN_DEG).toInt().let { if (it >= 1) " (${CoachEngine.turnsLabel(it)})" else "" }
+            (if (angle > 0f) "왼쪽" else "오른쪽") + " $deg°$turns"
+        }
     }
 }
 
@@ -584,5 +608,6 @@ private fun TurnType?.toNaviKind(): NaviTurnKind? = when (this) {
     null -> null
     TurnType.TURN_LEFT, TurnType.TURN_SHARP_L, TurnType.TURN_KEEP_L -> NaviTurnKind.LEFT
     TurnType.TURN_RIGHT, TurnType.TURN_SHARP_R, TurnType.TURN_KEEP_R -> NaviTurnKind.RIGHT
+    TurnType.TURN_UTURN -> NaviTurnKind.UTURN
     else -> NaviTurnKind.OTHER
 }

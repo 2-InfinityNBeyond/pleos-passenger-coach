@@ -25,7 +25,7 @@ class DemoPlayer {
     private fun naviTurn(type: TurnType?, meters: Double?, text: String?) =
         mutableNavi.update { it.copy(turn = type, turnDistanceM = meters, turnText = text, ready = true) }
 
-    /** 시나리오 S1(좌회전) → S2(정차)를 무한 반복한다. 취소하면 멈춘다. */
+    /** 좌회전 → 작은 핸들 조작 → 정차 → 후진 주차를 무한 반복한다. 취소하면 멈춘다. */
     suspend fun run() {
         while (true) {
             signal { it.copy(gear = VehicleGear.GEAR_PARK, brakeOn = true, turn = TurnSignalValue.OFF, steeringDeg = 0f) }
@@ -75,6 +75,26 @@ class DemoPlayer {
 
             naviTurn(null, null, null)
             delay(2_000)
+
+            // 후진 주차: 멈추고 R → 핸들을 한 바퀴 돌려 놓고 브레이크를 뗌 → 멈추고 핸들을 풂 → P
+            signal { it.copy(brakeOn = true) }
+            delay(1_500)
+            signal { it.copy(gear = VehicleGear.GEAR_REVERSE) }
+            delay(2_000)
+            for (angle in listOf(90f, 180f, 270f, 360f)) {
+                signal { it.copy(steeringDeg = angle) }
+                delay(600)
+            }
+            delay(1_500)
+            signal { it.copy(brakeOn = false) }
+            delay(3_000)
+            signal { it.copy(brakeOn = true) }
+            delay(1_500)
+            for (angle in listOf(270f, 180f, 90f, 0f)) {
+                signal { it.copy(steeringDeg = angle) }
+                delay(600)
+            }
+            delay(1_500)
         }
     }
 }
