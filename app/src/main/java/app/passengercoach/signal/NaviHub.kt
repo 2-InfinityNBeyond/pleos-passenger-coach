@@ -32,6 +32,10 @@ data class NaviSnapshot(
     val mode: NaviMode? = null,
     val ready: Boolean = false,
     val error: String? = null,
+    /** 현재 위치와 진행 방위(0 = 북, 시계 방향). 가까운 교차로를 기기 안에서 찾는 데만 쓴다 */
+    val lat: Double? = null,
+    val lon: Double? = null,
+    val heading: Double? = null,
 )
 
 /** NaviHelper SDK에서 회전 안내(TBT)와 내비 상태를 읽기 전용으로 받는다. */
@@ -73,6 +77,7 @@ class NaviHub(private val context: Context) {
 
         override fun onCurrentLocationInfo(info: CurrentLocationInfo) {
             dlog(TAG) { "LOCATION lat=${info.latitude} lon=${info.longitude} heading=${info.heading} t=${System.currentTimeMillis()}" }
+            if (!debugLocation) mutableState.update { it.copy(lat = info.latitude.toDouble(), lon = info.longitude.toDouble(), heading = info.heading.toDouble()) }
         }
 
         override fun onCurrentRoadSpeedLimit(limit: Int) {
@@ -137,6 +142,14 @@ class NaviHub(private val context: Context) {
         } catch (e: Exception) {
             Log.w(TAG, "DEBUG_ROUTE failed ${e.javaClass.simpleName}: ${e.message}")
         }
+    }
+
+    private var debugLocation = false
+
+    /** 개발용: 위치를 직접 정한다(에뮬레이터 위치가 신호 데이터가 없는 지역일 때 검증용). 이후 내비 위치는 무시한다 */
+    fun setDebugLocation(lat: Double, lon: Double, heading: Double) {
+        debugLocation = true
+        mutableState.update { it.copy(lat = lat, lon = lon, heading = heading) }
     }
 
     fun stop() {

@@ -37,8 +37,19 @@ android {
         }
     }
 
+    // 신호등 API 인증키는 저장소에 올라가지 않는 local.properties에서 읽는다. 없으면 신호등 기능이 꺼진다.
+    val signalKey: String = Properties().apply {
+        val f = rootProject.file("local.properties")
+        if (f.exists()) f.inputStream().use { load(it) }
+    }.getProperty("SIGNAL_API_KEY", "")
+
     buildTypes {
+        debug {
+            buildConfigField("String", "SIGNAL_API_KEY", "\"$signalKey\"")
+        }
         release {
+            // shortcut: 공개 저장소에 올리는 release APK에는 키를 넣지 않는다(APK에서 키를 꺼낼 수 있음). 키 공개를 결정하면 signalKey로 바꾼다
+            buildConfigField("String", "SIGNAL_API_KEY", "\"\"")
             isMinifyEnabled = false
             signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
         }

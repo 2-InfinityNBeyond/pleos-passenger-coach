@@ -3,6 +3,9 @@ package app.passengercoach.demo
 import ai.pleos.playground.navi.constants.TurnType
 import ai.pleos.playground.vehicle.constant.area.TurnSignalValue
 import ai.pleos.playground.vehicle.constant.control.VehicleGear
+import app.passengercoach.coach.LightColor
+import app.passengercoach.coach.LightInfo
+import app.passengercoach.coach.LightPhase
 import app.passengercoach.signal.NaviSnapshot
 import app.passengercoach.signal.SignalSnapshot
 import kotlinx.coroutines.delay
@@ -19,6 +22,10 @@ class DemoPlayer {
     private val mutableNavi = MutableStateFlow(NaviSnapshot(ready = true))
     val signals: StateFlow<SignalSnapshot> = mutableSignals
     val navi: StateFlow<NaviSnapshot> = mutableNavi
+
+    // 데모용 신호등(시험 자료): 정차 장면에서 빨간불이 초록불로 바뀌는 것을 보여 준다. 실제 신호가 아니다
+    private val mutableLight = MutableStateFlow<LightInfo?>(null)
+    val light: StateFlow<LightInfo?> = mutableLight
 
     private fun signal(f: (SignalSnapshot) -> SignalSnapshot) = mutableSignals.update { f(it).copy(connected = true) }
 
@@ -73,10 +80,15 @@ class DemoPlayer {
             signal { it.copy(turn = TurnSignalValue.OFF) }
             delay(1_500)
 
+            // 신호 대기: 빨간불 5초 → 초록불로 바뀌면 출발
             signal { it.copy(brakeOn = true) }
-            delay(3_000)
+            mutableLight.value = LightInfo("시험 사거리", 40, "남쪽", LightPhase(LightColor.RED, 5_000), LightPhase(LightColor.RED, 25_000), System.currentTimeMillis())
+            delay(5_000)
+            mutableLight.value = LightInfo("시험 사거리", 40, "남쪽", LightPhase(LightColor.GREEN, 20_000), LightPhase(LightColor.RED, 20_000), System.currentTimeMillis())
+            delay(1_500)
             signal { it.copy(brakeOn = false) }
-            delay(2_000)
+            delay(2_500)
+            mutableLight.value = null
 
             naviTurn(null, null, null)
             delay(2_000)

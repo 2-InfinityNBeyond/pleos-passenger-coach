@@ -71,6 +71,11 @@ import app.passengercoach.demo.DemoPlayer
 import app.passengercoach.signal.NaviHub
 import app.passengercoach.signal.NaviSnapshot
 import app.passengercoach.signal.SignalHub
+import app.passengercoach.signal.TrafficLightHub
+import app.passengercoach.coach.LightColor
+import app.passengercoach.coach.LightInfo
+import app.passengercoach.coach.LightPhase
+import app.passengercoach.coach.TrafficLights
 import app.passengercoach.signal.SignalSnapshot
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -145,11 +150,12 @@ fun CoachRoot(
     onWithdraw: () -> Unit,
     hub: SignalHub,
     navi: NaviHub,
+    lights: TrafficLightHub,
     demo: DemoPlayer,
 ) {
     MaterialTheme(colorScheme = if (isSystemInDarkTheme()) DarkColors else LightColors) {
         Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-            if (consented) CoachApp(hub, navi, demo, onWithdraw) else ConsentScreen(onAgree)
+            if (consented) CoachApp(hub, navi, lights, demo, onWithdraw) else ConsentScreen(onAgree)
         }
     }
 }
@@ -169,6 +175,7 @@ private fun ConsentScreen(onAgree: () -> Unit) {
             "차량을 제어하지 않고, 운전자 화면에는 표시되지 않아요.",
             "차량 데이터는 이 기기 밖으로 보내지 않아요. 학습 기록은 설정에서 켠 경우에만 이 기기에 저장해요.",
             "교육을 돕는 도구예요. 실제 운전의 책임은 운전자에게 있어요.",
+            "신호등 정보는 공공데이터에서 받아요. 이때 차량 위치는 보내지 않아요.",
             "동의는 설정에서 언제든 철회할 수 있어요.",
         ).forEach { Text("• $it", fontSize = 20.sp) }
         // 조작이 화면에 보이는 사람은 운전자이므로, 운전자의 동의를 따로 받는다
@@ -189,7 +196,7 @@ private fun ConsentScreen(onAgree: () -> Unit) {
 }
 
 @Composable
-private fun CoachApp(hub: SignalHub, navi: NaviHub, demo: DemoPlayer, onWithdraw: () -> Unit) {
+private fun CoachApp(hub: SignalHub, navi: NaviHub, lights: TrafficLightHub, demo: DemoPlayer, onWithdraw: () -> Unit) {
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences("coach", Context.MODE_PRIVATE) }
     val records = remember { RecordStore(File(context.filesDir, RecordStore.FILE_NAME)) }
@@ -206,6 +213,10 @@ private fun CoachApp(hub: SignalHub, navi: NaviHub, demo: DemoPlayer, onWithdraw
     // key: 데모를 켜고 끌 때 이전 쪽의 마지막 값이 한 프레임 남아 상황 판정이 틀어지지 않게 한다
     val signals by key(demoOn) { (if (demoOn) demo.signals else hub.state).collectAsState() }
     val naviSnapshot by key(demoOn) { (if (demoOn) demo.navi else navi.state).collectAsState() }
+
+    val light by key(demoOn) { (if (demoOn) demo.light else lights.state).collectAsState() }
+    // 가까운 교차로는 기기 안에서 찾는다. 위치를 밖으로 보내지 않는다
+    LaunchedEffect(Unit) { navi.state.collect { lights.onLocation(it.lat, it.lon, it.heading) } }
 
     val engine = remember(demoOn) { CoachEngine() }
     var message by remember(demoOn) { mutableStateOf<String?>(null) }
@@ -273,6 +284,7 @@ private fun CoachApp(hub: SignalHub, navi: NaviHub, demo: DemoPlayer, onWithdraw
         Page.MAIN -> CoachScreen(
             s = signals,
             n = naviSnapshot,
+            light = light,
             // 오래된 해설을 지금 일처럼 보이지 않게: 잠시 뒤 흐리게, 더 지나면 지운다
             message = message.takeIf { now - messageAtMs < MESSAGE_CLEAR_MS },
             // 코치 모드: 강사가 직접 설명하므로 설명 줄을 숨긴다
@@ -394,6 +406,7 @@ private fun RecordsScreen(records: RecordStore, onBack: () -> Unit) {
 private fun CoachScreen(
     s: SignalSnapshot,
     n: NaviSnapshot,
+    light: LightInfo?,
     message: String?,
     why: String?,
     recap: List<String>,
@@ -450,7 +463,7 @@ private fun CoachScreen(
                             NaviCard(n, dim = stale)
                             TurnCard(s, stale)
                             BrakeCard(s, stale)
-                            DeviceLine(s, stale)
+                            if (light != null) LightLine(light, now) else DeviceLine(s, stale)
                         }
                     }
                 } else {
@@ -458,7 +471,7 @@ private fun CoachScreen(
                     SteeringCard(s, stale, wheelSize, demoOn, Modifier.fillMaxWidth())
                     TurnCard(s, stale)
                     BrakeCard(s, stale)
-                    DeviceLine(s, stale)
+                    if (light != null) LightLine(light, now) else DeviceLine(s, stale)
                 }
                 if (recap.size >= 2) RecapCard(recap) else CoachCard(message, why, dim = stale || messageOld)
                 if (tip != null && !stale) TipCard(tip)
@@ -493,6 +506,38 @@ private fun RecapCard(items: List<String>) {
                 Text("${i + 1}. $text", fontSize = 20.sp, fontWeight = if (i == items.lastIndex) FontWeight.Bold else FontWeight.Normal)
             }
         }
+    }
+}
+
+/**
+ * 가까운 교차로의 신호등(공공데이터). 제공 기관 고지대로 참고용이라고 밝히고, 어느 접근로 기준인지도 적는다.
+ * 받은 값이 오래됐거나 남은 시간이 지났으면 시간을 쓰지 않는다.
+ */
+@Composable
+private fun LightLine(light: LightInfo, now: Long) {
+    Column {
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+            LightPart("직진", light.straight, light.atMs, now)
+            LightPart("좌회전", light.left, light.atMs, now)
+        }
+        Text("신호등(참고용) · ${light.name} ${light.distanceM}m · ${light.armLabel} 접근로", fontSize = 14.sp, color = MutedColor)
+    }
+}
+
+@Composable
+private fun LightPart(label: String, phase: LightPhase?, atMs: Long, now: Long) {
+    if (phase == null) return
+    val dot = when (phase.color) {
+        LightColor.RED -> Color(0xFFEF4444)
+        LightColor.YELLOW -> Color(0xFFF59E0B)
+        LightColor.GREEN -> Color(0xFF22C55E)
+        LightColor.UNKNOWN -> MutedColor
+    }
+    val seconds = TrafficLights.remainSeconds(phase, atMs, now)
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        Box(Modifier.size(14.dp).background(dot, RoundedCornerShape(7.dp)))
+        // 색만으로 구분하지 않도록 글자로도 쓴다
+        Text("$label ${TrafficLights.colorName(phase.color)}" + (seconds?.let { " ${it}초" } ?: ""), fontSize = 18.sp, fontWeight = FontWeight.Bold, maxLines = 1)
     }
 }
 

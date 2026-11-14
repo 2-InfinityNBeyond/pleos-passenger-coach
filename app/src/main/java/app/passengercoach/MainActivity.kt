@@ -17,11 +17,13 @@ import app.passengercoach.demo.DemoPlayer
 import java.io.File
 import app.passengercoach.signal.NaviHub
 import app.passengercoach.signal.SignalHub
+import app.passengercoach.signal.TrafficLightHub
 import app.passengercoach.ui.CoachRoot
 
 class MainActivity : ComponentActivity() {
     private lateinit var hub: SignalHub
     private lateinit var navi: NaviHub
+    private val lights = TrafficLightHub(BuildConfig.SIGNAL_API_KEY)
     private val demo = DemoPlayer()
 
     private var consented by mutableStateOf(false)
@@ -32,7 +34,10 @@ class MainActivity : ComponentActivity() {
         override fun onReceive(context: Context, intent: Intent) {
             val lat = intent.getDoubleExtra("lat", Double.NaN)
             val lon = intent.getDoubleExtra("lon", Double.NaN)
-            if (!lat.isNaN() && !lon.isNaN()) navi.requestDebugRoute(lat, lon)
+            if (lat.isNaN() || lon.isNaN()) return
+            // adb shell am broadcast -a app.passengercoach.DEBUG_LOCATION --ed lat <위도> --ed lon <경도> --ed heading <방위>
+            if (intent.action == ACTION_LOCATION) navi.setDebugLocation(lat, lon, intent.getDoubleExtra("heading", 0.0))
+            else navi.requestDebugRoute(lat, lon)
         }
     }
 
@@ -53,12 +58,14 @@ class MainActivity : ComponentActivity() {
                     // 동의 철회: 신호 읽기를 멈추고, 저장한 설정과 학습 기록을 지운다
                     hub.stop()
                     navi.stop()
+                    lights.stop()
                     getSharedPreferences(PREFS, MODE_PRIVATE).edit().clear().apply()
                     RecordStore(File(filesDir, RecordStore.FILE_NAME)).clear()
                     consented = false
                 },
                 hub = hub,
                 navi = navi,
+                lights = lights,
                 demo = demo,
             )
         }
@@ -77,7 +84,7 @@ class MainActivity : ComponentActivity() {
             ContextCompat.registerReceiver(
                 this,
                 debugRoute,
-                IntentFilter("app.passengercoach.DEBUG_ROUTE"),
+                IntentFilter("app.passengercoach.DEBUG_ROUTE").apply { addAction(ACTION_LOCATION) },
                 ContextCompat.RECEIVER_EXPORTED,
             )
             receiverRegistered = true
@@ -88,16 +95,19 @@ class MainActivity : ComponentActivity() {
         if (receiverRegistered) runCatching { unregisterReceiver(debugRoute) }
         navi.stop()
         hub.stop()
+        lights.stop()
         super.onDestroy()
     }
 
     private fun startSignals() {
         hub.start()
         navi.start()
+        lights.start()
     }
 
     private companion object {
         const val PREFS = "coach"
-        const val KEY_CONSENT = "consent_v2"
+        const val KEY_CONSENT = "consent_v3"
+        const val ACTION_LOCATION = "app.passengercoach.DEBUG_LOCATION"
     }
 }
