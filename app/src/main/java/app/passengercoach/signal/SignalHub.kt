@@ -85,6 +85,12 @@ class SignalHub(private val context: Context) {
         started = false
     }
 
+    /** "다시 시도" 버튼용: 구독을 정리하고 처음부터 연결한다. */
+    fun restart() {
+        stop()
+        start()
+    }
+
     private fun connect(attempt: Int) {
         try {
             val v = Vehicle(context)

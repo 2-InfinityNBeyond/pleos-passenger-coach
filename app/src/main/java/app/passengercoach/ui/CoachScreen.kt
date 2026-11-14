@@ -21,6 +21,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -81,6 +82,7 @@ fun CoachRoot(
 
 @Composable
 private fun ConsentScreen(onAgree: () -> Unit) {
+    var declined by remember { mutableStateOf(false) }
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(32.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
@@ -91,9 +93,14 @@ private fun ConsentScreen(onAgree: () -> Unit) {
             "운전자의 핸들, 브레이크, 방향지시등, 기어와 내비 안내를 동승자 화면에 보여 줘요.",
             "차량을 제어하지 않고, 운전자 화면에는 표시되지 않아요.",
             "차량 데이터는 이 기기 안에서만 쓰고, 저장하거나 보내지 않아요.",
+            "운전자에게 이 앱을 쓴다고 알려 주세요. 운전자의 조작이 동승자 화면에 보여요.",
             "교육을 돕는 도구예요. 실제 운전의 책임은 운전자에게 있어요.",
         ).forEach { Text("• $it", fontSize = 20.sp) }
-        Button(onClick = onAgree) { Text("동의하고 시작", fontSize = 22.sp) }
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Button(onClick = onAgree) { Text("동의하고 시작", fontSize = 22.sp) }
+            OutlinedButton(onClick = { declined = true }) { Text("동의하지 않음", fontSize = 22.sp) }
+        }
+        if (declined) Text("동의하지 않으면 앱을 쓸 수 없어요. 마음이 바뀌면 '동의하고 시작'을 눌러 주세요.", fontSize = 18.sp, color = MutedColor)
     }
 }
 
@@ -132,6 +139,10 @@ private fun CoachApp(hub: SignalHub, navi: NaviHub, demo: DemoPlayer) {
         message = message,
         demoOn = demoOn,
         now = now,
+        onRetry = {
+            hub.restart()
+            navi.restart()
+        },
         onTitleTap = {
             taps += 1
             if (taps >= 5) {
@@ -149,6 +160,7 @@ private fun CoachScreen(
     message: String?,
     demoOn: Boolean,
     now: Long,
+    onRetry: () -> Unit,
     onTitleTap: () -> Unit,
 ) {
     val allEmpty = s.steeringDeg == null && s.brakeOn == null && s.turn == null && s.gear == null
@@ -176,9 +188,11 @@ private fun CoachScreen(
             if (noSignal) {
                 Text("차량 신호 없음", fontSize = 40.sp, fontWeight = FontWeight.Bold, color = MutedColor)
                 s.error?.let { Text(it, fontSize = 16.sp, color = MutedColor) }
+                Button(onClick = onRetry) { Text("다시 시도", fontSize = 22.sp) }
             } else {
                 if (stale) {
                     Text("차량 신호 없음 · 마지막 수신 ${staleSeconds}초 전", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = MutedColor)
+                    Button(onClick = onRetry) { Text("다시 시도", fontSize = 22.sp) }
                 }
                 NaviCard(n, dim = stale)
                 val wheelSize = if (wide) 170.dp else 130.dp

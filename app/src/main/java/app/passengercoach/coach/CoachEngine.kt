@@ -18,8 +18,10 @@ class CoachEngine {
     private var prevBrake: Boolean? = null
     private var prevTurn: TurnDir? = null
 
+    private enum class Wheel { CENTER, SMALL, LARGE }
+
     private var steeringSeen = false
-    private var wheelOffCenter = false
+    private var wheel = Wheel.CENTER
 
     private var turnOnAtMs = 0L
     private var turnOnDir = TurnDir.OFF
@@ -83,25 +85,30 @@ class CoachEngine {
 
         if (steeringDeg != null) {
             val size = abs(steeringDeg)
+            val dir = if (steeringDeg > 0f) TurnDir.LEFT else TurnDir.RIGHT
             if (!steeringSeen) {
                 // 첫 관측은 해설하지 않고 기준만 잡는다
                 steeringSeen = true
-                wheelOffCenter = size >= STEER_START_DEG
-            } else if (!wheelOffCenter && size >= STEER_START_DEG) {
-                wheelOffCenter = true
-                val dir = if (steeringDeg > 0f) TurnDir.LEFT else TurnDir.RIGHT
-                message = if (!steeredAfterTurn && dir == turnOnDir && nowMs - turnOnAtMs <= LINK_WINDOW_MS) {
-                    steeredAfterTurn = true
-                    "깜빡이를 켠 뒤 핸들을 ${dirName(dir)}으로 돌렸어요."
-                } else {
-                    "핸들을 ${dirName(dir)}으로 돌렸어요."
-                }
-            } else if (wheelOffCenter && size <= STEER_CENTER_DEG) {
-                wheelOffCenter = false
-                message = "핸들이 다시 가운데로 돌아왔어요."
+                wheel = if (size >= STEER_START_DEG) Wheel.LARGE else if (size >= STEER_SMALL_DEG) Wheel.SMALL else Wheel.CENTER
+            } else if (size <= STEER_CENTER_DEG) {
+                if (wheel != Wheel.CENTER) message = "핸들이 다시 가운데로 돌아왔어요."
+                wheel = Wheel.CENTER
+            } else if (wheel != Wheel.LARGE && size >= STEER_START_DEG) {
+                message = if (wheel == Wheel.SMALL) "핸들을 ${dirName(dir)}으로 더 돌렸어요." else turnedMessage(dir, "", nowMs)
+                wheel = Wheel.LARGE
+            } else if (wheel == Wheel.CENTER && size >= STEER_SMALL_DEG) {
+                message = turnedMessage(dir, "조금 ", nowMs)
+                wheel = Wheel.SMALL
             }
         }
         return message
+    }
+
+    /** 깜빡이를 켠 직후 같은 방향으로 핸들을 돌렸으면 한 동작으로 묶어 말한다. 차선 변경이라고 단정하지는 않는다. */
+    private fun turnedMessage(dir: TurnDir, amount: String, nowMs: Long): String {
+        val linked = !steeredAfterTurn && dir == turnOnDir && nowMs - turnOnAtMs <= LINK_WINDOW_MS
+        if (linked) steeredAfterTurn = true
+        return (if (linked) "깜빡이를 켠 뒤 " else "") + "핸들을 ${dirName(dir)}으로 ${amount}돌렸어요."
     }
 
     private fun naviLinkMessage(turn: TurnDir, nowMs: Long): String? {
@@ -123,11 +130,15 @@ class CoachEngine {
     }
 
     companion object {
-        /** 핸들이 "돌아갔다"고 보는 각도(절댓값). spec에서 확정 전 임시값 */
+        // shortcut: 아래 각도는 실차 데이터 없이 정한 임시값(센서 흔들림 약 ±1~2도 가정). 실차 측정 뒤 조정
+        /** 핸들이 "돌아갔다"고 보는 각도(절댓값) */
         const val STEER_START_DEG = 20f
 
-        /** 핸들이 "가운데로 돌아왔다"고 보는 각도(절댓값) */
-        const val STEER_CENTER_DEG = 10f
+        /** 핸들이 "조금 돌아갔다"고 보는 각도(절댓값). 차선 변경처럼 작은 조작 */
+        const val STEER_SMALL_DEG = 6f
+
+        /** 핸들이 "가운데로 돌아왔다"고 보는 각도(절댓값). 작은 조작 시작 각도보다 작아야 한다 */
+        const val STEER_CENTER_DEG = 3f
 
         /** 내비 안내가 이 거리(미터) 이내일 때부터 "안내한 뒤" 시간을 잰다. 임시값 */
         const val NAVI_NEAR_M = 300.0

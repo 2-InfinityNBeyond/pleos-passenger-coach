@@ -124,6 +124,11 @@ class NaviHub(private val context: Context) {
         }
     }
 
+    fun restart() {
+        stop()
+        start()
+    }
+
     /** 개발용: 목적지를 지정해 경로를 요청한다(에뮬레이터 검증용). */
     fun requestDebugRoute(lat: Double, lon: Double) {
         dlog(TAG) { "DEBUG_ROUTE request lat=$lat lon=$lon" }

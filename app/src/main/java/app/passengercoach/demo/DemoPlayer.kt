@@ -45,7 +45,7 @@ class DemoPlayer {
             signal { it.copy(turn = TurnSignalValue.LEFT) }
             delay(2_000)
 
-            for (angle in listOf(10f, 20f, 30f, 40f)) {
+            for (angle in listOf(30f, 40f)) {
                 signal { it.copy(steeringDeg = angle) }
                 delay(500)
             }
@@ -57,6 +57,16 @@ class DemoPlayer {
             signal { it.copy(turn = TurnSignalValue.OFF) }
             naviTurn(TurnType.TURN_RIGHT, 400.0, "시험 안내")
             delay(2_500)
+
+            // 작은 핸들 조작(차선 변경처럼): 오른쪽 깜빡이 → 조금 돌림 → 가운데 → 깜빡이 끔 (SDK 값은 음수가 오른쪽)
+            signal { it.copy(turn = TurnSignalValue.RIGHT) }
+            delay(1_500)
+            signal { it.copy(steeringDeg = -8f) }
+            delay(2_000)
+            signal { it.copy(steeringDeg = 0f) }
+            delay(1_500)
+            signal { it.copy(turn = TurnSignalValue.OFF) }
+            delay(1_500)
 
             signal { it.copy(brakeOn = true) }
             delay(3_000)

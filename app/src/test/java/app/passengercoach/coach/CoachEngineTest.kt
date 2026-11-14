@@ -27,8 +27,34 @@ class CoachEngineTest {
         e.feed(at = 0)
         assertEquals("왼쪽 깜빡이를 켰어요.", e.feed(turn = TurnDir.LEFT, at = 1_000))
         assertEquals("깜빡이를 켠 뒤 핸들을 왼쪽으로 돌렸어요.", e.feed(turn = TurnDir.LEFT, steering = 25f, at = 3_000))
-        assertEquals("핸들이 다시 가운데로 돌아왔어요.", e.feed(turn = TurnDir.LEFT, steering = 5f, at = 6_000))
+        assertEquals("핸들이 다시 가운데로 돌아왔어요.", e.feed(turn = TurnDir.LEFT, steering = 2f, at = 6_000))
         assertEquals("깜빡이를 껐어요.", e.feed(turn = TurnDir.OFF, steering = 0f, at = 7_000))
+    }
+
+    @Test
+    fun `작은 핸들 조작은 조금 돌렸다고 해설하고 차선 변경이라고 단정하지 않는다`() {
+        val e = CoachEngine()
+        e.feed(at = 0)
+        e.feed(turn = TurnDir.RIGHT, at = 1_000)
+        assertEquals("깜빡이를 켠 뒤 핸들을 오른쪽으로 조금 돌렸어요.", e.feed(turn = TurnDir.RIGHT, steering = -8f, at = 2_000))
+        assertEquals("핸들이 다시 가운데로 돌아왔어요.", e.feed(turn = TurnDir.RIGHT, steering = -1f, at = 4_000))
+    }
+
+    @Test
+    fun `기준보다 작은 흔들림은 해설하지 않는다`() {
+        val e = CoachEngine()
+        e.feed(at = 0)
+        assertNull(e.feed(steering = 4f, at = 1_000))
+        assertNull(e.feed(steering = -5f, at = 2_000))
+    }
+
+    @Test
+    fun `조금 돌린 뒤 더 돌리면 한 번 더 알려 준다`() {
+        val e = CoachEngine()
+        e.feed(at = 0)
+        assertEquals("핸들을 왼쪽으로 조금 돌렸어요.", e.feed(steering = 8f, at = 1_000))
+        assertEquals("핸들을 왼쪽으로 더 돌렸어요.", e.feed(steering = 25f, at = 2_000))
+        assertNull(e.feed(steering = 12f, at = 3_000))
     }
 
     @Test
