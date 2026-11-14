@@ -74,7 +74,7 @@ class CoachEngineTest {
     fun `내비 안내 뒤 깜빡이까지의 시간을 알려 준다`() {
         val e = CoachEngine()
         e.feed(at = 0)
-        e.onNavi(NaviTurnKind.LEFT, nowMs = 1_000)
+        e.onNavi(NaviTurnKind.LEFT, distanceM = 200.0, nowMs = 1_000)
         assertEquals(
             "내비가 좌회전을 안내하고 4초 뒤, 왼쪽 깜빡이를 켰어요.",
             e.feed(turn = TurnDir.LEFT, at = 5_000),
@@ -82,10 +82,30 @@ class CoachEngineTest {
     }
 
     @Test
+    fun `먼 안내는 가까워진 시점부터 잰다`() {
+        val e = CoachEngine()
+        e.feed(at = 0)
+        e.onNavi(NaviTurnKind.LEFT, distanceM = 4_000.0, nowMs = 1_000)
+        e.onNavi(NaviTurnKind.LEFT, distanceM = 250.0, nowMs = 21_000)
+        assertEquals(
+            "내비가 좌회전을 안내하고 4초 뒤, 왼쪽 깜빡이를 켰어요.",
+            e.feed(turn = TurnDir.LEFT, at = 25_000),
+        )
+    }
+
+    @Test
+    fun `아직 멀리 있는 안내와 깜빡이는 시차를 말하지 않는다`() {
+        val e = CoachEngine()
+        e.feed(at = 0)
+        e.onNavi(NaviTurnKind.LEFT, distanceM = 4_000.0, nowMs = 1_000)
+        assertEquals("왼쪽 깜빡이를 켰어요.", e.feed(turn = TurnDir.LEFT, at = 25_000))
+    }
+
+    @Test
     fun `내비 안내와 다른 방향 깜빡이는 시차를 말하지 않는다`() {
         val e = CoachEngine()
         e.feed(at = 0)
-        e.onNavi(NaviTurnKind.RIGHT, nowMs = 1_000)
+        e.onNavi(NaviTurnKind.RIGHT, distanceM = 200.0, nowMs = 1_000)
         assertEquals("왼쪽 깜빡이를 켰어요.", e.feed(turn = TurnDir.LEFT, at = 5_000))
     }
 

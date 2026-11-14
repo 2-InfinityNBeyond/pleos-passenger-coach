@@ -1,5 +1,6 @@
 package app.passengercoach.signal
 
+import app.passengercoach.dlog
 import ai.pleos.playground.navi.constants.NaviErrorCode
 import ai.pleos.playground.navi.constants.NaviMode
 import ai.pleos.playground.navi.constants.NavigationStatus
@@ -44,7 +45,7 @@ class NaviHub(private val context: Context) {
         override fun onTBTInfo(list: List<TBTInfo>) {
             val first = list.firstOrNull()
             val t = System.currentTimeMillis()
-            Log.i(TAG, "TBT count=${list.size} first=${first?.type} dist=${first?.distance} desc=${first?.description} t=$t")
+            dlog(TAG) { "TBT count=${list.size} first=${first?.type} dist=${first?.distance} desc=${first?.description} t=$t" }
             if (first == null) {
                 mutableState.update { it.copy(turn = null, turnDistanceM = null, turnText = null, turnAtMs = t) }
             } else {
@@ -53,17 +54,17 @@ class NaviHub(private val context: Context) {
         }
 
         override fun onNavigationStatus(status: NavigationStatus) {
-            Log.i(TAG, "STATUS $status t=${System.currentTimeMillis()}")
+            dlog(TAG) { "STATUS $status t=${System.currentTimeMillis()}" }
             mutableState.update { it.copy(status = status) }
         }
 
         override fun onRouteStateInfo(info: RouteStateInfo) {
-            Log.i(TAG, "ROUTE_STATE mode=${info.naviMode} option=${info.routeOption} t=${System.currentTimeMillis()}")
+            dlog(TAG) { "ROUTE_STATE mode=${info.naviMode} option=${info.routeOption} t=${System.currentTimeMillis()}" }
             mutableState.update { it.copy(mode = info.naviMode) }
         }
 
         override fun onRouteStarted(info: RouteStartInfo) {
-            Log.i(TAG, "ROUTE_STARTED $info t=${System.currentTimeMillis()}")
+            dlog(TAG) { "ROUTE_STARTED $info t=${System.currentTimeMillis()}" }
         }
 
         override fun onRouteEnded() = clearTurn("ROUTE_ENDED")
@@ -71,19 +72,19 @@ class NaviHub(private val context: Context) {
         override fun onDestinationArrived(info: DestinationArrivedInfo) = clearTurn("ARRIVED")
 
         override fun onCurrentLocationInfo(info: CurrentLocationInfo) {
-            Log.i(TAG, "LOCATION lat=${info.latitude} lon=${info.longitude} heading=${info.heading} t=${System.currentTimeMillis()}")
+            dlog(TAG) { "LOCATION lat=${info.latitude} lon=${info.longitude} heading=${info.heading} t=${System.currentTimeMillis()}" }
         }
 
         override fun onCurrentRoadSpeedLimit(limit: Int) {
-            Log.i(TAG, "SPEED_LIMIT $limit t=${System.currentTimeMillis()}")
+            dlog(TAG) { "SPEED_LIMIT $limit t=${System.currentTimeMillis()}" }
         }
 
         override fun onCameraAlert(list: List<CameraAlert>) {
-            Log.i(TAG, "CAMERA count=${list.size} first=${list.firstOrNull()?.type} t=${System.currentTimeMillis()}")
+            dlog(TAG) { "CAMERA count=${list.size} first=${list.firstOrNull()?.type} t=${System.currentTimeMillis()}" }
         }
 
         override fun onCautionPointInfo(list: List<CautionPoint>) {
-            Log.i(TAG, "CAUTION count=${list.size} first=${list.firstOrNull()?.type} t=${System.currentTimeMillis()}")
+            dlog(TAG) { "CAUTION count=${list.size} first=${list.firstOrNull()?.type} t=${System.currentTimeMillis()}" }
         }
 
         override fun onError(code: NaviErrorCode) {
@@ -105,7 +106,7 @@ class NaviHub(private val context: Context) {
                         n.getRouteStateInfo()
                         n.getCurrentLocationInfo()
                         mutableState.update { it.copy(ready = true, error = null) }
-                        Log.i(TAG, "NAVI_READY")
+                        dlog(TAG) { "NAVI_READY" }
                     } catch (e: Exception) {
                         // 권한 부족 등으로 내비 정보를 못 받아도 앱은 종료되지 않는다(요구서: 앱은 죽지 않음)
                         Log.w(TAG, "NAVI_READ_FAILED ${e.javaClass.simpleName}: ${e.message}")
@@ -125,7 +126,7 @@ class NaviHub(private val context: Context) {
 
     /** 개발용: 목적지를 지정해 경로를 요청한다(에뮬레이터 검증용). */
     fun requestDebugRoute(lat: Double, lon: Double) {
-        Log.i(TAG, "DEBUG_ROUTE request lat=$lat lon=$lon")
+        dlog(TAG) { "DEBUG_ROUTE request lat=$lat lon=$lon" }
         try {
             navi?.requestRoute(RouteInfo(lat, lon, null, null, "debug", "", "", "", RouteOption.RECOMMENDED, "", false))
         } catch (e: Exception) {
@@ -141,7 +142,7 @@ class NaviHub(private val context: Context) {
     }
 
     private fun clearTurn(reason: String) {
-        Log.i(TAG, "$reason t=${System.currentTimeMillis()}")
+        dlog(TAG) { "$reason t=${System.currentTimeMillis()}" }
         mutableState.update { it.copy(turn = null, turnDistanceM = null, turnText = null) }
     }
 

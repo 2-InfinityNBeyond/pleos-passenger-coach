@@ -59,7 +59,7 @@ class DemoPlayer {
             delay(2_500)
 
             signal { it.copy(brakeOn = true) }
-            delay(1_500)
+            delay(3_000)
             signal { it.copy(brakeOn = false) }
             delay(2_000)
 

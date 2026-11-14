@@ -28,14 +28,20 @@ class CoachEngine {
     private var naviKind: NaviTurnKind? = null
     private var naviSinceMs = 0L
 
-    /** 내비 안내가 바뀐 시점을 기억한다(안내 → 깜빡이 시차 계산용). 화면 문구는 내비 카드가 따로 보여 준다. */
-    fun onNavi(kind: NaviTurnKind?, nowMs: Long) {
+    /**
+     * 내비 안내가 [NAVI_NEAR_M] 이내로 가까워진 시점을 기억한다(안내 → 깜빡이 시차 계산용).
+     * 먼 안내(예: 5km 앞 회전)부터 재면 "안내하고 N초 뒤"가 사실과 달라지기 때문이다.
+     */
+    fun onNavi(kind: NaviTurnKind?, distanceM: Double?, nowMs: Long) {
         if (kind == null) {
             naviKind = null
             return
         }
+        val near = distanceM != null && distanceM <= NAVI_NEAR_M
         if (kind != naviKind) {
             naviKind = kind
+            naviSinceMs = if (near) nowMs else 0L
+        } else if (naviSinceMs == 0L && near) {
             naviSinceMs = nowMs
         }
     }
@@ -122,6 +128,9 @@ class CoachEngine {
 
         /** 핸들이 "가운데로 돌아왔다"고 보는 각도(절댓값) */
         const val STEER_CENTER_DEG = 10f
+
+        /** 내비 안내가 이 거리(미터) 이내일 때부터 "안내한 뒤" 시간을 잰다. 임시값 */
+        const val NAVI_NEAR_M = 300.0
 
         /** 깜빡이를 켠 뒤 핸들 조작을 같은 동작으로 묶는 시간(밀리초) */
         const val LINK_WINDOW_MS = 10_000L

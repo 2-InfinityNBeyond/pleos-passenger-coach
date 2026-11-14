@@ -1,6 +1,10 @@
 package app.passengercoach.signal
 
+import app.passengercoach.dlog
 import ai.pleos.playground.vehicle.Vehicle
+import ai.pleos.playground.vehicle.api.model.capability.AccessType
+import ai.pleos.playground.vehicle.api.model.capability.AreaBounds
+import ai.pleos.playground.vehicle.api.model.capability.CapabilityConfig
 import ai.pleos.playground.vehicle.constant.area.TurnSignalValue
 import ai.pleos.playground.vehicle.constant.control.VehicleGear
 import ai.pleos.playground.vehicle.listener.BrakePedalStatusListener
@@ -27,7 +31,12 @@ data class SignalSnapshot(
     val gearAtMs: Long = 0L,
     val connected: Boolean = false,
     val error: String? = null,
-)
+    /** 차량이 읽기를 지원하지 않는다고 확인된 신호 키("steering", "brake", "turn", "gear") */
+    val unsupported: Set<String> = emptySet(),
+) {
+    /** 어느 신호든 가장 최근에 값을 받은 시각(밀리초). 한 번도 못 받았으면 0 */
+    fun lastUpdateMs(): Long = maxOf(steeringAtMs, brakeAtMs, turnAtMs, gearAtMs)
+}
 
 /**
  * Vehicle SDK 신호(핸들 각도, 브레이크, 방향지시등, 기어)를 읽기 전용으로 구독한다.
@@ -86,8 +95,9 @@ class SignalHub(private val context: Context) {
             v.getTurnSignal().registerTurnSignalState(turnListener)
             v.getGear().registerGearSelection(gearListener)
             readCurrent(v)
+            checkSupport(v)
             mutableState.update { it.copy(connected = true, error = null) }
-            Log.i(TAG, "CONNECTED attempt=$attempt")
+            dlog(TAG) { "CONNECTED attempt=$attempt" }
         } catch (e: Exception) {
             Log.w(TAG, "connect failed attempt=$attempt: ${e.message}")
             mutableState.update { it.copy(connected = false, error = e.message ?: e.javaClass.simpleName) }
@@ -102,27 +112,55 @@ class SignalHub(private val context: Context) {
         v.getGear().getCurrentGearSelectionState({ g: VehicleGear? -> onGear(g) }, { e: Exception -> fail("gear-get", e) })
     }
 
+    /** 차량이 해당 신호를 읽게 해 주는지 확인한다. 확인이 실패하면 지원 여부를 모르는 것으로 보고 그대로 둔다. */
+    private fun checkSupport(v: Vehicle) {
+        try {
+            v.getBrake().checkBrakePedalStatusCapabilities(
+                { c: CapabilityConfig? -> if (!readable(c)) markUnsupported("brake") },
+                { e: Exception -> fail("brake-cap", e) },
+            )
+            v.getTurnSignal().checkTurnSignalStateCapabilities(
+                { c: CapabilityConfig? -> if (!readable(c)) markUnsupported("turn") },
+                { e: Exception -> fail("turn-cap", e) },
+            )
+            v.getSteeringWheel().checkSteeringWheelAngleCapabilities(
+                { c: CapabilityConfig?, _: AreaBounds<Float>? -> if (!readable(c)) markUnsupported("steering") },
+                { e: Exception -> fail("steering-cap", e) },
+            )
+        } catch (e: Exception) {
+            Log.w(TAG, "CAP_CHECK_FAILED ${e.javaClass.simpleName}: ${e.message}")
+        }
+    }
+
+    private fun readable(c: CapabilityConfig?): Boolean =
+        c != null && (c.accessType == AccessType.READ || c.accessType == AccessType.READ_WRITE)
+
+    private fun markUnsupported(key: String) {
+        dlog(TAG) { "UNSUPPORTED $key" }
+        mutableState.update { it.copy(unsupported = it.unsupported + key) }
+    }
+
     private fun onSteering(value: Float?) {
         val t = System.currentTimeMillis()
-        Log.i(TAG, "STEER value=$value t=$t")
+        dlog(TAG) { "STEER value=$value t=$t" }
         mutableState.update { it.copy(steeringDeg = value, steeringAtMs = t) }
     }
 
     private fun onBrake(value: Boolean?) {
         val t = System.currentTimeMillis()
-        Log.i(TAG, "BRAKE value=$value t=$t")
+        dlog(TAG) { "BRAKE value=$value t=$t" }
         mutableState.update { it.copy(brakeOn = value, brakeAtMs = t) }
     }
 
     private fun onTurn(value: TurnSignalValue?) {
         val t = System.currentTimeMillis()
-        Log.i(TAG, "TURN value=$value t=$t")
+        dlog(TAG) { "TURN value=$value t=$t" }
         mutableState.update { it.copy(turn = value, turnAtMs = t) }
     }
 
     private fun onGear(value: VehicleGear?) {
         val t = System.currentTimeMillis()
-        Log.i(TAG, "GEAR value=$value t=$t")
+        dlog(TAG) { "GEAR value=$value t=$t" }
         mutableState.update { it.copy(gear = value, gearAtMs = t) }
     }
 
