@@ -4,7 +4,9 @@ import app.passengercoach.dlog
 import ai.pleos.playground.navi.constants.TurnType
 import ai.pleos.playground.vehicle.constant.area.TurnSignalValue
 import ai.pleos.playground.vehicle.constant.control.VehicleGear
+import android.content.Context
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -20,6 +22,11 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.Switch
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
@@ -32,6 +39,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -39,11 +47,15 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.passengercoach.coach.CoachEngine
+import app.passengercoach.coach.CoachTopic
+import app.passengercoach.coach.Record
+import app.passengercoach.coach.RecordStore
 import app.passengercoach.coach.DriveState
 import app.passengercoach.coach.GearKind
 import app.passengercoach.coach.NaviTurnKind
@@ -53,13 +65,46 @@ import app.passengercoach.signal.NaviHub
 import app.passengercoach.signal.NaviSnapshot
 import app.passengercoach.signal.SignalHub
 import app.passengercoach.signal.SignalSnapshot
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
+import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
-// 밝은 바탕(#F4F6FA) 위에서 글자 대비 4.5:1 이상을 맞춘 회색
-private val MutedColor = Color(0xFF5B6270)
-private val CardColor = Color(0xFFFFFFFF)
+private val LightColors = lightColorScheme(
+    background = Color(0xFFF4F6FA),
+    onBackground = Color(0xFF111827),
+    surface = Color(0xFFFFFFFF),
+    onSurface = Color(0xFF111827),
+    // 밝은 바탕 위에서 글자 대비 4.5:1 이상을 맞춘 회색
+    onSurfaceVariant = Color(0xFF5B6270),
+    primary = Color(0xFF1F3A8A),
+    onPrimary = Color(0xFFFFFFFF),
+    tertiary = Color(0xFFB45309),
+    outline = Color(0xFFB0B5BD),
+)
+
+// 야간 화면: 밤에 밝은 화면이 운전자 눈에 거슬리지 않게 어두운 바탕을 쓴다(차량의 야간 모드를 따른다)
+private val DarkColors = darkColorScheme(
+    background = Color(0xFF0B0F17),
+    onBackground = Color(0xFFE5E7EB),
+    surface = Color(0xFF1A2130),
+    onSurface = Color(0xFFE5E7EB),
+    onSurfaceVariant = Color(0xFF9AA3B2),
+    primary = Color(0xFF8FB0FF),
+    onPrimary = Color(0xFF0B0F17),
+    tertiary = Color(0xFFF59E0B),
+    outline = Color(0xFF4B5563),
+)
+
+private val MutedColor: Color
+    @Composable get() = MaterialTheme.colorScheme.onSurfaceVariant
+private val CardColor: Color
+    @Composable get() = MaterialTheme.colorScheme.surface
 
 /** 이 너비 이상이면 가로 배치, 미만이면 세로 배치 */
 private val WIDE_MIN_WIDTH = 640.dp
@@ -74,18 +119,28 @@ private const val PING_MS = 4_000L
 /** 시작 뒤 이 시간까지는 "차량 신호 없음" 대신 "연결하는 중"으로 보여 준다 */
 private const val CONNECTING_MS = 3_000L
 
+private enum class Page { MAIN, SETTINGS, RECORDS }
+
+/** 연습 상황: 고른 상황의 해설만 보여 준다. 주행 전에 고르고, 주행 중에는 입력을 요구하지 않는다 */
+private enum class Topic(val label: String, val filter: CoachTopic?) {
+    ALL("전체", null),
+    TURN("회전 (깜빡이, 핸들)", CoachTopic.TURN),
+    STOP("출발과 정차 (브레이크, 기어)", CoachTopic.STOP),
+}
+
 /** 첫 실행 동의 여부에 따라 안내(S0) 또는 실시간 화면(S2)을 보여 준다. */
 @Composable
 fun CoachRoot(
     consented: Boolean,
     onAgree: () -> Unit,
+    onWithdraw: () -> Unit,
     hub: SignalHub,
     navi: NaviHub,
     demo: DemoPlayer,
 ) {
-    MaterialTheme {
-        Surface(modifier = Modifier.fillMaxSize(), color = Color(0xFFF4F6FA)) {
-            if (consented) CoachApp(hub, navi, demo) else ConsentScreen(onAgree)
+    MaterialTheme(colorScheme = if (isSystemInDarkTheme()) DarkColors else LightColors) {
+        Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+            if (consented) CoachApp(hub, navi, demo, onWithdraw) else ConsentScreen(onAgree)
         }
     }
 }
@@ -93,6 +148,7 @@ fun CoachRoot(
 @Composable
 private fun ConsentScreen(onAgree: () -> Unit) {
     var declined by remember { mutableStateOf(false) }
+    var driverOk by remember { mutableStateOf(false) }
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(32.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
@@ -102,20 +158,39 @@ private fun ConsentScreen(onAgree: () -> Unit) {
         listOf(
             "운전자의 핸들, 브레이크, 방향지시등, 기어와 내비 안내를 동승자 화면에 보여 줘요.",
             "차량을 제어하지 않고, 운전자 화면에는 표시되지 않아요.",
-            "차량 데이터는 이 기기 안에서만 쓰고, 저장하거나 보내지 않아요.",
-            "운전자에게 이 앱을 쓴다고 알려 주세요. 운전자의 조작이 동승자 화면에 보여요.",
+            "차량 데이터는 이 기기 밖으로 보내지 않아요. 학습 기록은 설정에서 켠 경우에만 이 기기에 저장해요.",
             "교육을 돕는 도구예요. 실제 운전의 책임은 운전자에게 있어요.",
+            "동의는 설정에서 언제든 철회할 수 있어요.",
         ).forEach { Text("• $it", fontSize = 20.sp) }
+        // 조작이 화면에 보이는 사람은 운전자이므로, 운전자의 동의를 따로 받는다
+        Row(
+            Modifier.clickable { driverOk = !driverOk },
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Checkbox(checked = driverOk, onCheckedChange = { driverOk = it })
+            Text("운전자: 내 조작이 동승자 화면에 보이는 것에 동의해요. (운전자가 직접 눌러 주세요)", fontSize = 20.sp)
+        }
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Button(onClick = onAgree) { Text("동의하고 시작", fontSize = 22.sp) }
+            Button(onClick = onAgree, enabled = driverOk) { Text("동의하고 시작", fontSize = 22.sp) }
             OutlinedButton(onClick = { declined = true }) { Text("동의하지 않음", fontSize = 22.sp) }
         }
+        if (!driverOk) Text("운전자가 동의해야 시작할 수 있어요.", fontSize = 18.sp, color = MutedColor)
         if (declined) Text("동의하지 않으면 앱을 쓸 수 없어요. 마음이 바뀌면 '동의하고 시작'을 눌러 주세요.", fontSize = 18.sp, color = MutedColor)
     }
 }
 
 @Composable
-private fun CoachApp(hub: SignalHub, navi: NaviHub, demo: DemoPlayer) {
+private fun CoachApp(hub: SignalHub, navi: NaviHub, demo: DemoPlayer, onWithdraw: () -> Unit) {
+    val context = LocalContext.current
+    val prefs = remember { context.getSharedPreferences("coach", Context.MODE_PRIVATE) }
+    val records = remember { RecordStore(File(context.filesDir, RecordStore.FILE_NAME)) }
+    var page by remember { mutableStateOf(Page.MAIN) }
+    var topic by remember { mutableStateOf(Topic.entries.getOrElse(prefs.getInt("topic", 0)) { Topic.ALL }) }
+    var coachMode by remember { mutableStateOf(prefs.getBoolean("coach_mode", false)) }
+    var recordOn by remember { mutableStateOf(prefs.getBoolean("record_on", false)) }
+    val topicNow by rememberUpdatedState(topic)
+    val recordNow by rememberUpdatedState(recordOn)
+
     var demoOn by remember { mutableStateOf(false) }
     var taps by remember { mutableIntStateOf(0) }
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
@@ -142,39 +217,157 @@ private fun CoachApp(hub: SignalHub, navi: NaviHub, demo: DemoPlayer) {
     }
     LaunchedEffect(demoOn) {
         (if (demoOn) demo.signals else hub.state).collect { s ->
-            engine.onSignals(s.steeringDeg, s.brakeOn, s.turn.toDir(), s.gear.toKind(), System.currentTimeMillis())?.let {
-                message = it
-                why = engine.why
-                messageAtMs = System.currentTimeMillis()
-                dlog("Coach") { "MESSAGE $it" }
-            }
+            val at = System.currentTimeMillis()
+            val text = engine.onSignals(s.steeringDeg, s.brakeOn, s.turn.toDir(), s.gear.toKind(), at) ?: return@collect
+            // 고른 연습 상황의 해설만 보여 준다
+            if (topicNow.filter != null && engine.topic != topicNow.filter) return@collect
+            message = text
+            why = engine.why
+            messageAtMs = at
+            dlog("Coach") { "MESSAGE $text" }
+            // 시험 자료(데모)는 실제 조작이 아니므로 기록하지 않는다
+            if (recordNow && !demoOn) withContext(Dispatchers.IO) { runCatching { records.add(at, text) } }
         }
     }
     LaunchedEffect(demoOn) {
         (if (demoOn) demo.navi else navi.state).collect { n -> engine.onNavi(n.turn.toNaviKind(), n.turnDistanceM, System.currentTimeMillis()) }
     }
 
-    CoachScreen(
-        s = signals,
-        n = naviSnapshot,
-        // 오래된 해설을 지금 일처럼 보이지 않게: 잠시 뒤 흐리게, 더 지나면 지운다
-        message = message.takeIf { now - messageAtMs < MESSAGE_CLEAR_MS },
-        why = why,
-        messageOld = now - messageAtMs > MESSAGE_FRESH_MS,
-        demoOn = demoOn,
-        now = now,
-        onRetry = {
-            hub.restart()
-            navi.restart()
-        },
-        onTitleTap = {
-            taps += 1
-            if (taps >= 5) {
-                taps = 0
-                demoOn = !demoOn
+    when (page) {
+        Page.SETTINGS -> SettingsScreen(
+            topic = topic,
+            onTopic = {
+                topic = it
+                prefs.edit().putInt("topic", it.ordinal).apply()
+            },
+            coachMode = coachMode,
+            onCoachMode = {
+                coachMode = it
+                prefs.edit().putBoolean("coach_mode", it).apply()
+            },
+            recordOn = recordOn,
+            onRecordOn = {
+                recordOn = it
+                prefs.edit().putBoolean("record_on", it).apply()
+            },
+            onRecords = { page = Page.RECORDS },
+            onWithdraw = onWithdraw,
+            onBack = { page = Page.MAIN },
+        )
+        Page.RECORDS -> RecordsScreen(records, onBack = { page = Page.SETTINGS })
+        Page.MAIN -> CoachScreen(
+            s = signals,
+            n = naviSnapshot,
+            // 오래된 해설을 지금 일처럼 보이지 않게: 잠시 뒤 흐리게, 더 지나면 지운다
+            message = message.takeIf { now - messageAtMs < MESSAGE_CLEAR_MS },
+            // 코치 모드: 강사가 직접 설명하므로 설명 줄을 숨긴다
+            why = why.takeIf { !coachMode },
+            messageOld = now - messageAtMs > MESSAGE_FRESH_MS,
+            demoOn = demoOn,
+            now = now,
+            onRetry = {
+                hub.restart()
+                navi.restart()
+            },
+            onTitleTap = {
+                taps += 1
+                if (taps >= 5) {
+                    taps = 0
+                    demoOn = !demoOn
+                }
+            },
+            onSettings = { page = Page.SETTINGS },
+        )
+    }
+}
+
+@Composable
+private fun SettingsScreen(
+    topic: Topic,
+    onTopic: (Topic) -> Unit,
+    coachMode: Boolean,
+    onCoachMode: (Boolean) -> Unit,
+    recordOn: Boolean,
+    onRecordOn: (Boolean) -> Unit,
+    onRecords: () -> Unit,
+    onWithdraw: () -> Unit,
+    onBack: () -> Unit,
+) {
+    var confirmWithdraw by remember { mutableStateOf(false) }
+    Column(
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            Text("설정", fontSize = 26.sp, fontWeight = FontWeight.Bold)
+            Button(onClick = onBack) { Text("돌아가기", fontSize = 20.sp) }
+        }
+        Text("주행 전에 정해 주세요. 주행 중에는 바꿀 필요가 없어요.", fontSize = 18.sp, color = MutedColor)
+
+        Text("연습 상황", fontSize = 22.sp, fontWeight = FontWeight.Bold)
+        Text("고른 상황의 해설만 보여 줘요. 조작 표시는 그대로예요.", fontSize = 18.sp, color = MutedColor)
+        Topic.entries.forEach { t ->
+            if (t == topic) Button(onClick = {}) { Text("✓ ${t.label}", fontSize = 20.sp) }
+            else OutlinedButton(onClick = { onTopic(t) }) { Text(t.label, fontSize = 20.sp) }
+        }
+
+        SwitchRow("코치 모드", "설명 줄을 숨기고 일어난 일만 보여 줘요. 강사가 직접 설명할 때 써요.", coachMode, onCoachMode)
+        SwitchRow("학습 기록", "해설 문장과 시각을 이 기기 안에만 저장해요. 밖으로 보내지 않아요.", recordOn, onRecordOn)
+        OutlinedButton(onClick = onRecords) { Text("학습 기록 보기", fontSize = 20.sp) }
+
+        Text("동의", fontSize = 22.sp, fontWeight = FontWeight.Bold)
+        if (!confirmWithdraw) {
+            OutlinedButton(onClick = { confirmWithdraw = true }) { Text("동의 철회", fontSize = 20.sp) }
+        } else {
+            Text("철회하면 학습 기록과 설정이 지워지고 처음 화면으로 돌아가요.", fontSize = 18.sp)
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Button(onClick = onWithdraw) { Text("철회하기", fontSize = 20.sp) }
+                OutlinedButton(onClick = { confirmWithdraw = false }) { Text("취소", fontSize = 20.sp) }
             }
-        },
-    )
+        }
+    }
+}
+
+@Composable
+private fun SwitchRow(title: String, description: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text(title, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+            Text(description, fontSize = 18.sp, color = MutedColor)
+        }
+        Switch(checked = checked, onCheckedChange = onChange)
+    }
+}
+
+@Composable
+private fun RecordsScreen(records: RecordStore, onBack: () -> Unit) {
+    var list by remember { mutableStateOf(emptyList<Record>()) }
+    LaunchedEffect(Unit) { list = withContext(Dispatchers.IO) { runCatching { records.load() }.getOrDefault(emptyList()) } }
+    val format = remember { SimpleDateFormat("M월 d일 HH:mm:ss", Locale.KOREA) }
+    Column(
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            Text("학습 기록", fontSize = 26.sp, fontWeight = FontWeight.Bold)
+            Button(onClick = onBack) { Text("돌아가기", fontSize = 20.sp) }
+        }
+        if (list.isEmpty()) {
+            Text("기록이 없어요. 설정에서 학습 기록을 켜면 해설이 여기에 쌓여요.", fontSize = 20.sp, color = MutedColor)
+        } else {
+            Text("최근 ${list.size}개 · 이 기기 안에만 있어요", fontSize = 18.sp, color = MutedColor)
+            OutlinedButton(onClick = {
+                records.clear()
+                list = emptyList()
+            }) { Text("모두 지우기", fontSize = 20.sp) }
+            list.asReversed().forEach { r ->
+                Column {
+                    Text(format.format(Date(r.atMs)), fontSize = 16.sp, color = MutedColor)
+                    Text(r.text, fontSize = 20.sp)
+                }
+            }
+        }
+    }
 }
 
 @Composable
@@ -188,6 +381,7 @@ private fun CoachScreen(
     now: Long,
     onRetry: () -> Unit,
     onTitleTap: () -> Unit,
+    onSettings: () -> Unit,
 ) {
     val allEmpty = s.steeringDeg == null && s.brakeOn == null && s.turn == null && s.gear == null
     val noSignal = !s.connected || allEmpty
@@ -208,8 +402,11 @@ private fun CoachScreen(
         ) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Text("이세계주행천재", fontSize = 26.sp, fontWeight = FontWeight.Bold, modifier = Modifier.clickable(onClick = onTitleTap))
-                if (demoOn) Text("시험 자료(데모)", fontSize = 18.sp, color = Color(0xFFB45309), fontWeight = FontWeight.Bold)
-                Text(stateLabel(s), fontSize = 30.sp, fontWeight = FontWeight.Bold, color = if (stale) MutedColor else Color.Unspecified)
+                if (demoOn) Text("시험 자료(데모)", fontSize = 18.sp, color = MaterialTheme.colorScheme.tertiary, fontWeight = FontWeight.Bold)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(stateLabel(s), fontSize = 30.sp, fontWeight = FontWeight.Bold, color = if (stale) MutedColor else Color.Unspecified)
+                    TextButton(onClick = onSettings) { Text("설정", fontSize = 20.sp) }
+                }
             }
             if (noSignal && now - s.startedAtMs < CONNECTING_MS) {
                 Text("차량에 연결하는 중", fontSize = 40.sp, fontWeight = FontWeight.Bold, color = MutedColor)
@@ -287,10 +484,10 @@ private fun SteeringCard(s: SignalSnapshot, dim: Boolean, wheelSize: Dp, modifie
             Text(unsupportedText("핸들 각도"), fontSize = 22.sp, color = MutedColor)
             return@Column
         }
+        val color = if (dim) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.primary
         Canvas(Modifier.size(wheelSize)) {
             val c = Offset(size.width / 2, size.height / 2)
             val r = size.minDimension / 2 - 8f
-            val color = if (dim) Color(0xFFB0B5BD) else Color(0xFF1F3A8A)
             rotate(degrees = -(angle ?: 0f), pivot = c) {
                 drawCircle(color = color, radius = r, center = c, style = Stroke(width = 16f))
                 drawLine(color, c, Offset(c.x - r, c.y), strokeWidth = 14f)

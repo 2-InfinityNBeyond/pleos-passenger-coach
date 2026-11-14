@@ -16,6 +16,7 @@
         <!-- DO(주행 최적화)를 선언하지 않는다: 센터 화면에서는 주행 중 자동 차단 -->
         <activity
             android:name=".MainActivity"
+            android:configChanges="uiMode"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

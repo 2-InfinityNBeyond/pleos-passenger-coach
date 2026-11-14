@@ -12,7 +12,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
+import app.passengercoach.coach.RecordStore
 import app.passengercoach.demo.DemoPlayer
+import java.io.File
 import app.passengercoach.signal.NaviHub
 import app.passengercoach.signal.SignalHub
 import app.passengercoach.ui.CoachRoot
@@ -46,6 +48,14 @@ class MainActivity : ComponentActivity() {
                     getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(KEY_CONSENT, true).apply()
                     consented = true
                     startSignals()
+                },
+                onWithdraw = {
+                    // 동의 철회: 신호 읽기를 멈추고, 저장한 설정과 학습 기록을 지운다
+                    hub.stop()
+                    navi.stop()
+                    getSharedPreferences(PREFS, MODE_PRIVATE).edit().clear().apply()
+                    RecordStore(File(filesDir, RecordStore.FILE_NAME)).clear()
+                    consented = false
                 },
                 hub = hub,
                 navi = navi,
@@ -88,6 +98,6 @@ class MainActivity : ComponentActivity() {
 
     private companion object {
         const val PREFS = "coach"
-        const val KEY_CONSENT = "consent_v1"
+        const val KEY_CONSENT = "consent_v2"
     }
 }

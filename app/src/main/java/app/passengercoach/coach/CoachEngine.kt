@@ -8,6 +8,9 @@ enum class GearKind { PARK, NEUTRAL, REVERSE, DRIVE, OTHER }
 
 enum class NaviTurnKind { LEFT, RIGHT, OTHER }
 
+/** 해설이 속한 연습 상황: 회전(깜빡이, 핸들) 또는 출발과 정차(브레이크, 기어) */
+enum class CoachTopic { TURN, STOP }
+
 /**
  * 코치 해설 규칙(요구서 F2 이벤트 감지, F3 코치 해설).
  * 점수나 평가 표현 없이, 일어난 일만 한 문장으로 알려 준다.
@@ -39,6 +42,10 @@ class CoachEngine {
     var why: String? = null
         private set
 
+    /** 가장 최근 해설이 속한 연습 상황 */
+    var topic: CoachTopic? = null
+        private set
+
     /**
      * 내비 안내가 [NAVI_NEAR_M] 이내로 가까워진 시점을 기억한다(안내 → 깜빡이 시차 계산용).
      * 먼 안내(예: 5km 앞 회전)부터 재면 "안내하고 N초 뒤"가 사실과 달라지기 때문이다.
@@ -60,12 +67,14 @@ class CoachEngine {
     fun onSignals(steeringDeg: Float?, brakeOn: Boolean?, turn: TurnDir?, gear: GearKind?, nowMs: Long): String? {
         var message: String? = null
         var reason: String? = null
+        var kind: CoachTopic? = null
 
         if (gear != null) {
             val before = prevGear
             if (before != null && gear != before) {
                 message = "기어를 ${gearLabel(before)}에서 ${gearLabel(gear)}로 바꿨어요."
                 reason = gearWhy(gear)
+                kind = CoachTopic.STOP
             }
             prevGear = gear
         }
@@ -75,6 +84,7 @@ class CoachEngine {
             if (before != null && brakeOn != before) {
                 message = if (brakeOn) "브레이크를 밟았어요." else "브레이크를 뗐어요."
                 reason = if (brakeOn) "브레이크는 속도를 줄이거나 멈출 때 밟아요." else "브레이크에서 발을 떼면 차가 다시 움직일 수 있어요."
+                kind = CoachTopic.STOP
             }
             prevBrake = brakeOn
         }
@@ -91,6 +101,7 @@ class CoachEngine {
                     naviLinkMessage(turn, nowMs) ?: "${dirName(turn)} 깜빡이를 켰어요."
                 }
                 reason = if (turn == TurnDir.OFF) "방향을 다 바꾸면 깜빡이를 꺼요." else "깜빡이는 주변 차와 보행자에게 갈 방향을 미리 알려요."
+                kind = CoachTopic.TURN
             }
             prevTurn = turn
         }
@@ -109,19 +120,25 @@ class CoachEngine {
                 if (wheel != Wheel.CENTER) {
                     message = "핸들이 다시 가운데로 돌아왔어요."
                     reason = "핸들이 가운데면 차가 곧게 가요."
+                    kind = CoachTopic.TURN
                 }
                 wheel = Wheel.CENTER
             } else if (wheel != Wheel.LARGE && size >= STEER_START_DEG) {
                 message = if (wheel == Wheel.SMALL) "핸들을 ${dirName(dir)}으로 더 돌렸어요." else turnedMessage(dir, "", nowMs)
                 reason = STEER_WHY
+                kind = CoachTopic.TURN
                 wheel = Wheel.LARGE
             } else if (wheel == Wheel.CENTER && size >= STEER_SMALL_DEG) {
                 message = turnedMessage(dir, "조금 ", nowMs)
                 reason = STEER_WHY
+                kind = CoachTopic.TURN
                 wheel = Wheel.SMALL
             }
         }
-        if (message != null) why = reason
+        if (message != null) {
+            why = reason
+            topic = kind
+        }
         return message
     }
 
