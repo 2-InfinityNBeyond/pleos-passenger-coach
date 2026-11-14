@@ -125,6 +125,7 @@ private fun CoachApp(hub: SignalHub, navi: NaviHub, demo: DemoPlayer) {
     val engine = remember(demoOn) { CoachEngine() }
     var message by remember(demoOn) { mutableStateOf<String?>(null) }
     var messageAtMs by remember(demoOn) { mutableLongStateOf(0L) }
+    var why by remember(demoOn) { mutableStateOf<String?>(null) }
     LaunchedEffect(Unit) {
         while (true) {
             now = System.currentTimeMillis()
@@ -143,6 +144,7 @@ private fun CoachApp(hub: SignalHub, navi: NaviHub, demo: DemoPlayer) {
         (if (demoOn) demo.signals else hub.state).collect { s ->
             engine.onSignals(s.steeringDeg, s.brakeOn, s.turn.toDir(), s.gear.toKind(), System.currentTimeMillis())?.let {
                 message = it
+                why = engine.why
                 messageAtMs = System.currentTimeMillis()
                 dlog("Coach") { "MESSAGE $it" }
             }
@@ -157,6 +159,7 @@ private fun CoachApp(hub: SignalHub, navi: NaviHub, demo: DemoPlayer) {
         n = naviSnapshot,
         // 오래된 해설을 지금 일처럼 보이지 않게: 잠시 뒤 흐리게, 더 지나면 지운다
         message = message.takeIf { now - messageAtMs < MESSAGE_CLEAR_MS },
+        why = why,
         messageOld = now - messageAtMs > MESSAGE_FRESH_MS,
         demoOn = demoOn,
         now = now,
@@ -179,6 +182,7 @@ private fun CoachScreen(
     s: SignalSnapshot,
     n: NaviSnapshot,
     message: String?,
+    why: String?,
     messageOld: Boolean,
     demoOn: Boolean,
     now: Long,
@@ -233,14 +237,14 @@ private fun CoachScreen(
                     TurnCard(s, stale)
                     BrakeCard(s, stale)
                 }
-                CoachCard(message, dim = stale || messageOld)
+                CoachCard(message, why, dim = stale || messageOld)
             }
         }
     }
 }
 
 @Composable
-private fun CoachCard(message: String?, dim: Boolean) {
+private fun CoachCard(message: String?, why: String?, dim: Boolean) {
     Box(Modifier.fillMaxWidth().background(CardColor, RoundedCornerShape(12.dp)).padding(16.dp)) {
         Column {
             Text("해설", fontSize = 18.sp, color = MutedColor)
@@ -250,6 +254,7 @@ private fun CoachCard(message: String?, dim: Boolean) {
                 fontWeight = FontWeight.Bold,
                 color = if (message == null || dim) MutedColor else Color.Unspecified,
             )
+            if (message != null && why != null) Text(why, fontSize = 20.sp, color = MutedColor)
         }
     }
 }

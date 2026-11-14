@@ -174,6 +174,24 @@ class CoachEngineTest {
     }
 
     @Test
+    fun `해설마다 조작의 쓰임을 한 줄로 알려 주고 평가 표현은 없다`() {
+        val e = CoachEngine()
+        e.feed(at = 0)
+        assertNull(e.why)
+        val reasons = mutableListOf<String?>()
+        e.feed(turn = TurnDir.LEFT, at = 1_000); reasons += e.why
+        assertEquals("깜빡이는 주변 차와 보행자에게 갈 방향을 미리 알려요.", e.why)
+        e.feed(turn = TurnDir.LEFT, steering = 30f, at = 2_000); reasons += e.why
+        e.feed(turn = TurnDir.LEFT, steering = 0f, at = 3_000); reasons += e.why
+        e.feed(turn = TurnDir.OFF, at = 4_000); reasons += e.why
+        e.feed(brake = true, at = 5_000); reasons += e.why
+        e.feed(brake = true, gear = GearKind.PARK, at = 6_000); reasons += e.why
+        assertEquals(6, reasons.filterNotNull().distinct().size)
+        val banned = listOf("급", "위험", "점", "잘", "못", "실수", "나쁜", "좋은", "해야")
+        reasons.filterNotNull().forEach { r -> banned.forEach { w -> assertFalse("'$r' 에 평가 단어 '$w'", r.contains(w)) } }
+    }
+
+    @Test
     fun `값이 없는 신호는 무시한다`() {
         val e = CoachEngine()
         e.feed(at = 0)

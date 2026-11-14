@@ -33,6 +33,13 @@ class CoachEngine {
     private var naviDistanceM = Double.MAX_VALUE
 
     /**
+     * 가장 최근 해설의 조작이 무엇을 위한 것인지 한 줄 설명(요구서 목표: 조작이 왜 필요한지 이해).
+     * 평가가 아니라 조작의 쓰임만 말한다. shortcut: 문구는 전문가 검수 전, 검수 뒤 교체
+     */
+    var why: String? = null
+        private set
+
+    /**
      * 내비 안내가 [NAVI_NEAR_M] 이내로 가까워진 시점을 기억한다(안내 → 깜빡이 시차 계산용).
      * 먼 안내(예: 5km 앞 회전)부터 재면 "안내하고 N초 뒤"가 사실과 달라지기 때문이다.
      */
@@ -52,11 +59,13 @@ class CoachEngine {
     /** 새 신호를 반영하고, 해설할 일이 생겼으면 문장을 돌려준다. 없으면 null. */
     fun onSignals(steeringDeg: Float?, brakeOn: Boolean?, turn: TurnDir?, gear: GearKind?, nowMs: Long): String? {
         var message: String? = null
+        var reason: String? = null
 
         if (gear != null) {
             val before = prevGear
             if (before != null && gear != before) {
                 message = "기어를 ${gearLabel(before)}에서 ${gearLabel(gear)}로 바꿨어요."
+                reason = gearWhy(gear)
             }
             prevGear = gear
         }
@@ -65,6 +74,7 @@ class CoachEngine {
             val before = prevBrake
             if (before != null && brakeOn != before) {
                 message = if (brakeOn) "브레이크를 밟았어요." else "브레이크를 뗐어요."
+                reason = if (brakeOn) "브레이크는 속도를 줄이거나 멈출 때 밟아요." else "브레이크에서 발을 떼면 차가 다시 움직일 수 있어요."
             }
             prevBrake = brakeOn
         }
@@ -80,6 +90,7 @@ class CoachEngine {
                     steeredAfterTurn = false
                     naviLinkMessage(turn, nowMs) ?: "${dirName(turn)} 깜빡이를 켰어요."
                 }
+                reason = if (turn == TurnDir.OFF) "방향을 다 바꾸면 깜빡이를 꺼요." else "깜빡이는 주변 차와 보행자에게 갈 방향을 미리 알려요."
             }
             prevTurn = turn
         }
@@ -95,17 +106,31 @@ class CoachEngine {
                 steeringSeen = true
                 wheel = if (size >= STEER_START_DEG) Wheel.LARGE else if (size >= STEER_SMALL_DEG) Wheel.SMALL else Wheel.CENTER
             } else if (size <= STEER_CENTER_DEG) {
-                if (wheel != Wheel.CENTER) message = "핸들이 다시 가운데로 돌아왔어요."
+                if (wheel != Wheel.CENTER) {
+                    message = "핸들이 다시 가운데로 돌아왔어요."
+                    reason = "핸들이 가운데면 차가 곧게 가요."
+                }
                 wheel = Wheel.CENTER
             } else if (wheel != Wheel.LARGE && size >= STEER_START_DEG) {
                 message = if (wheel == Wheel.SMALL) "핸들을 ${dirName(dir)}으로 더 돌렸어요." else turnedMessage(dir, "", nowMs)
+                reason = STEER_WHY
                 wheel = Wheel.LARGE
             } else if (wheel == Wheel.CENTER && size >= STEER_SMALL_DEG) {
                 message = turnedMessage(dir, "조금 ", nowMs)
+                reason = STEER_WHY
                 wheel = Wheel.SMALL
             }
         }
+        if (message != null) why = reason
         return message
+    }
+
+    private fun gearWhy(gear: GearKind): String? = when (gear) {
+        GearKind.PARK -> "P는 차를 세워 둘 때 쓰는 기어예요."
+        GearKind.NEUTRAL -> "N은 바퀴에 힘이 전달되지 않는 기어예요."
+        GearKind.REVERSE -> "R은 뒤로 갈 때 쓰는 기어예요."
+        GearKind.DRIVE -> "D는 앞으로 갈 때 쓰는 기어예요."
+        GearKind.OTHER -> null
     }
 
     /** 깜빡이를 켠 직후 같은 방향으로 핸들을 돌렸으면 한 동작으로 묶어 말한다. 차선 변경이라고 단정하지는 않는다. */
@@ -134,6 +159,8 @@ class CoachEngine {
     }
 
     companion object {
+        private const val STEER_WHY = "핸들을 돌린 쪽으로 차가 방향을 바꿔요."
+
         // shortcut: 아래 각도는 실차 데이터 없이 정한 임시값(센서 흔들림 약 ±1~2도 가정). 실차 측정 뒤 조정
         /** 핸들이 "돌아갔다"고 보는 각도(절댓값) */
         const val STEER_START_DEG = 20f
