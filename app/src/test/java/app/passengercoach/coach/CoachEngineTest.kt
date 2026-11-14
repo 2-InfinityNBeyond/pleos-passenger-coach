@@ -218,6 +218,31 @@ class CoachEngineTest {
     }
 
     @Test
+    fun `전조등 와이퍼 안전벨트 문이 바뀌면 하나씩 해설한다`() {
+        val e = CoachEngine()
+        assertNull(e.onExtras(false, false, false, true, false))
+        assertEquals("운전자가 안전벨트를 맸어요.", e.onExtras(false, false, false, false, false))
+        assertEquals(CoachTopic.DEVICE, e.topic)
+        assertEquals("전조등을 켰어요.", e.onExtras(true, false, true, false, false))
+        assertEquals("와이퍼를 켰어요.", e.onExtras(true, false, true, false, false))
+        assertNull(e.onExtras(true, false, true, false, false))
+        assertEquals("문이 열렸어요.", e.onExtras(true, null, true, false, true))
+        assertEquals("문을 열기 전에는 뒤에서 오는 차와 자전거를 확인해요.", e.why)
+    }
+
+    @Test
+    fun `멈추면 방금 한 조작을 순서대로 되짚고 다시 움직이면 비운다`() {
+        val r = Recap()
+        listOf("가", "나", "다", "라", "마").forEach { r.add(it) }
+        assertTrue(r.update(still = false).isEmpty())
+        assertEquals(listOf("다", "라", "마"), r.update(still = true))
+        r.add("바")
+        assertEquals(listOf("라", "마", "바"), r.update(still = true))
+        assertTrue(r.update(still = false).isEmpty())
+        assertTrue(r.update(still = true).isEmpty())
+    }
+
+    @Test
     fun `값이 없는 신호는 무시한다`() {
         val e = CoachEngine()
         e.feed(at = 0)

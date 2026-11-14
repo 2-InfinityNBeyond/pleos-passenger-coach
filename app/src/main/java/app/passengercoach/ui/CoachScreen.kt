@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
@@ -35,6 +36,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -48,6 +50,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -55,6 +59,7 @@ import androidx.compose.ui.unit.sp
 import app.passengercoach.coach.CoachEngine
 import app.passengercoach.coach.CoachTopic
 import app.passengercoach.coach.Record
+import app.passengercoach.coach.Recap
 import app.passengercoach.coach.RecordStore
 import app.passengercoach.coach.Tip
 import app.passengercoach.coach.TipPicker
@@ -129,6 +134,7 @@ private enum class Topic(val label: String, val filter: CoachTopic?) {
     TURN("회전 (깜빡이, 핸들)", CoachTopic.TURN),
     STOP("출발과 정차 (브레이크, 기어)", CoachTopic.STOP),
     PARK("주차 (후진)", CoachTopic.PARK),
+    DEVICE("등화와 장치 (전조등, 와이퍼, 안전벨트, 문)", CoachTopic.DEVICE),
 }
 
 /** 첫 실행 동의 여부에 따라 안내(S0) 또는 실시간 화면(S2)을 보여 준다. */
@@ -197,14 +203,16 @@ private fun CoachApp(hub: SignalHub, navi: NaviHub, demo: DemoPlayer, onWithdraw
     var demoOn by remember { mutableStateOf(false) }
     var taps by remember { mutableIntStateOf(0) }
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
-    val signals by (if (demoOn) demo.signals else hub.state).collectAsState()
-    val naviSnapshot by (if (demoOn) demo.navi else navi.state).collectAsState()
+    // key: 데모를 켜고 끌 때 이전 쪽의 마지막 값이 한 프레임 남아 상황 판정이 틀어지지 않게 한다
+    val signals by key(demoOn) { (if (demoOn) demo.signals else hub.state).collectAsState() }
+    val naviSnapshot by key(demoOn) { (if (demoOn) demo.navi else navi.state).collectAsState() }
 
     val engine = remember(demoOn) { CoachEngine() }
     var message by remember(demoOn) { mutableStateOf<String?>(null) }
     var messageAtMs by remember(demoOn) { mutableLongStateOf(0L) }
     var why by remember(demoOn) { mutableStateOf<String?>(null) }
     val tipPicker = remember(demoOn) { TipPicker() }
+    val recap = remember(demoOn) { Recap() }
     LaunchedEffect(Unit) {
         while (true) {
             now = System.currentTimeMillis()
@@ -222,10 +230,13 @@ private fun CoachApp(hub: SignalHub, navi: NaviHub, demo: DemoPlayer, onWithdraw
     LaunchedEffect(demoOn) {
         (if (demoOn) demo.signals else hub.state).collect { s ->
             val at = System.currentTimeMillis()
-            val text = engine.onSignals(s.steeringDeg, s.brakeOn, s.turn.toDir(), s.gear.toKind(), at) ?: return@collect
+            val text = engine.onSignals(s.steeringDeg, s.brakeOn, s.turn.toDir(), s.gear.toKind(), at)
+                ?: engine.onExtras(s.lowBeamOn, s.highBeamOn, s.wiperOn, s.beltWarning, s.doorOpen)
+                ?: return@collect
             // 고른 연습 상황의 해설만 보여 준다
             if (topicNow.filter != null && engine.topic != topicNow.filter) return@collect
             message = text
+            recap.add(text)
             why = engine.why
             messageAtMs = at
             dlog("Coach") { "MESSAGE $text" }
@@ -266,6 +277,8 @@ private fun CoachApp(hub: SignalHub, navi: NaviHub, demo: DemoPlayer, onWithdraw
             message = message.takeIf { now - messageAtMs < MESSAGE_CLEAR_MS },
             // 코치 모드: 강사가 직접 설명하므로 설명 줄을 숨긴다
             why = why.takeIf { !coachMode },
+            // 멈춰 있을 때(주차, 정차)는 방금 한 조작을 순서대로 되짚는다
+            recap = recap.update(signals.gear == VehicleGear.GEAR_PARK || DriveState.isStopped(signals.gear.toKind(), signals.brakeOn, signals.steeringDeg)),
             // 상황에 맞는 알아 두기. 코치 모드에서는 강사가 직접 설명하므로 숨긴다
             tip = tipPicker.pick(signals.gear.toKind(), signals.brakeOn, signals.steeringDeg, naviSnapshot.turn.toNaviKind(), naviSnapshot.turnDistanceM)
                 ?.takeIf { !coachMode }?.let { TipPicker.tip(it) },
@@ -383,6 +396,7 @@ private fun CoachScreen(
     n: NaviSnapshot,
     message: String?,
     why: String?,
+    recap: List<String>,
     tip: Tip?,
     messageOld: Boolean,
     demoOn: Boolean,
@@ -431,20 +445,22 @@ private fun CoachScreen(
                 val wheelSize = if (wide) 140.dp else 130.dp
                 if (wide) {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(24.dp), verticalAlignment = Alignment.CenterVertically) {
-                        SteeringCard(s, stale, wheelSize, Modifier.weight(1f))
+                        SteeringCard(s, stale, wheelSize, demoOn, Modifier.weight(1f))
                         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                             NaviCard(n, dim = stale)
                             TurnCard(s, stale)
                             BrakeCard(s, stale)
+                            DeviceLine(s, stale)
                         }
                     }
                 } else {
                     NaviCard(n, dim = stale)
-                    SteeringCard(s, stale, wheelSize, Modifier.fillMaxWidth())
+                    SteeringCard(s, stale, wheelSize, demoOn, Modifier.fillMaxWidth())
                     TurnCard(s, stale)
                     BrakeCard(s, stale)
+                    DeviceLine(s, stale)
                 }
-                CoachCard(message, why, dim = stale || messageOld)
+                if (recap.size >= 2) RecapCard(recap) else CoachCard(message, why, dim = stale || messageOld)
                 if (tip != null && !stale) TipCard(tip)
             }
         }
@@ -465,6 +481,31 @@ private fun CoachCard(message: String?, why: String?, dim: Boolean) {
             if (message != null && why != null) Text(why, fontSize = 20.sp, color = MutedColor)
         }
     }
+}
+
+@Composable
+private fun RecapCard(items: List<String>) {
+    Box(Modifier.fillMaxWidth().background(CardColor, RoundedCornerShape(12.dp)).padding(horizontal = 16.dp, vertical = 10.dp)) {
+        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text("방금 한 조작 · 순서대로", fontSize = 16.sp, color = MutedColor)
+            items.forEachIndexed { i, text ->
+                // 마지막 줄이 가장 최근 조작
+                Text("${i + 1}. $text", fontSize = 20.sp, fontWeight = if (i == items.lastIndex) FontWeight.Bold else FontWeight.Normal)
+            }
+        }
+    }
+}
+
+/** 전조등, 와이퍼, 안전벨트, 문: 받은 값만 한 줄로 보여 준다. 하나도 못 받았으면 줄을 그리지 않는다 */
+@Composable
+private fun DeviceLine(s: SignalSnapshot, dim: Boolean) {
+    val parts = listOfNotNull(
+        s.lowBeamOn?.let { if (s.highBeamOn == true) "상향등 켜짐" else if (it) "전조등 켜짐" else "전조등 꺼짐" },
+        s.wiperOn?.let { if (it) "와이퍼 켜짐" else "와이퍼 꺼짐" },
+        s.beltWarning?.let { if (it) "운전석 안전벨트 풀림" else "안전벨트 맴" },
+        s.doorOpen?.let { if (it) "문 열림" else "문 닫힘" },
+    )
+    if (parts.isNotEmpty()) Text(parts.joinToString(" · "), fontSize = 16.sp, color = MutedColor)
 }
 
 @Composable
@@ -497,27 +538,43 @@ private fun NaviCard(n: NaviSnapshot, dim: Boolean) {
  * 화면 회전은 시계 방향이 양수이므로 부호를 뒤집는다.
  */
 @Composable
-private fun SteeringCard(s: SignalSnapshot, dim: Boolean, wheelSize: Dp, modifier: Modifier) {
+private fun SteeringCard(s: SignalSnapshot, dim: Boolean, wheelSize: Dp, demo: Boolean, modifier: Modifier) {
     val angle = s.steeringDeg
-    Column(modifier, horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("핸들", fontSize = 20.sp)
+    Column(modifier, horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
         if ("steering" in s.unsupported) {
+            Text("핸들", fontSize = 20.sp)
             Text(unsupportedText("핸들 각도"), fontSize = 22.sp, color = MutedColor)
             return@Column
         }
         val color = if (dim) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.primary
-        Canvas(Modifier.size(wheelSize)) {
-            val c = Offset(size.width / 2, size.height / 2)
-            val r = size.minDimension / 2 - 8f
-            rotate(degrees = -(angle ?: 0f), pivot = c) {
-                drawCircle(color = color, radius = r, center = c, style = Stroke(width = 16f))
-                drawLine(color, c, Offset(c.x - r, c.y), strokeWidth = 14f)
-                drawLine(color, c, Offset(c.x + r, c.y), strokeWidth = 14f)
-                drawLine(color, c, Offset(c.x, c.y + r), strokeWidth = 14f)
-                drawCircle(color = Color(0xFFE11D48), radius = 10f, center = Offset(c.x, c.y - r))
+        if (s.gear == VehicleGear.GEAR_REVERSE) {
+            // 후진 중: 핸들을 돌리면 차 뒤쪽이 어디로 가는지 보이도록 합성 후방 화면을 크게, 핸들은 작게 겹쳐 보여 준다
+            Box(Modifier.fillMaxWidth().height(wheelSize + 30.dp)) {
+                RearView(angle ?: 0f, moving = s.brakeOn == false, demo = demo, modifier = Modifier.fillMaxSize())
+                Wheel(angle, 56.dp, Color.White, Modifier.align(Alignment.BottomEnd).padding(6.dp))
             }
+            Text(angleLabel(angle), fontSize = 24.sp, fontWeight = FontWeight.Bold, color = if (dim) MutedColor else Color.Unspecified)
+        } else {
+            Text("핸들", fontSize = 20.sp)
+            Wheel(angle, wheelSize, color, Modifier)
+            Text(angleLabel(angle), fontSize = 30.sp, fontWeight = FontWeight.Bold, color = if (dim) MutedColor else Color.Unspecified)
         }
-        Text(angleLabel(angle), fontSize = 30.sp, fontWeight = FontWeight.Bold, color = if (dim) MutedColor else Color.Unspecified)
+    }
+}
+
+@Composable
+private fun Wheel(angle: Float?, wheelSize: Dp, color: Color, modifier: Modifier) {
+    Canvas(modifier.size(wheelSize).semantics { contentDescription = "핸들 " + angleLabel(angle) }) {
+        val c = Offset(size.width / 2, size.height / 2)
+        val line = size.minDimension * 0.09f
+        val r = size.minDimension / 2 - line / 2
+        rotate(degrees = -(angle ?: 0f), pivot = c) {
+            drawCircle(color = color, radius = r, center = c, style = Stroke(width = line))
+            drawLine(color, c, Offset(c.x - r, c.y), strokeWidth = line * 0.9f)
+            drawLine(color, c, Offset(c.x + r, c.y), strokeWidth = line * 0.9f)
+            drawLine(color, c, Offset(c.x, c.y + r), strokeWidth = line * 0.9f)
+            drawCircle(color = Color(0xFFE11D48), radius = line * 0.65f, center = Offset(c.x, c.y - r))
+        }
     }
 }
 

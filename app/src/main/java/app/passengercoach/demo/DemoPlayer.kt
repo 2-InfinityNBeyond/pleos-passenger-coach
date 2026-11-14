@@ -28,9 +28,14 @@ class DemoPlayer {
     /** 좌회전 → 작은 핸들 조작 → 정차 → 후진 주차를 무한 반복한다. 취소하면 멈춘다. */
     suspend fun run() {
         while (true) {
-            signal { it.copy(gear = VehicleGear.GEAR_PARK, brakeOn = true, turn = TurnSignalValue.OFF, steeringDeg = 0f) }
+            signal { it.copy(gear = VehicleGear.GEAR_PARK, brakeOn = true, turn = TurnSignalValue.OFF, steeringDeg = 0f, lowBeamOn = false, wiperOn = false, beltWarning = true, doorOpen = false) }
             naviTurn(null, null, null)
-            delay(3_000)
+            delay(2_000)
+            // 출발 전: 안전벨트를 매고 전조등을 켠다
+            signal { it.copy(beltWarning = false) }
+            delay(2_000)
+            signal { it.copy(lowBeamOn = true) }
+            delay(2_000)
 
             signal { it.copy(brakeOn = false) }
             delay(1_500)
@@ -81,20 +86,31 @@ class DemoPlayer {
             delay(1_500)
             signal { it.copy(gear = VehicleGear.GEAR_REVERSE) }
             delay(2_000)
-            for (angle in listOf(90f, 180f, 270f, 360f)) {
+            for (angle in listOf(90f, 180f, 270f, PARK_STEER_DEG)) {
                 signal { it.copy(steeringDeg = angle) }
                 delay(600)
             }
             delay(1_500)
             signal { it.copy(brakeOn = false) }
-            delay(3_000)
+            delay(PARK_ARC_MS)
             signal { it.copy(brakeOn = true) }
             delay(1_500)
             for (angle in listOf(270f, 180f, 90f, 0f)) {
                 signal { it.copy(steeringDeg = angle) }
                 delay(600)
             }
+            delay(1_000)
+            // 핸들을 풀고 곧게 칸 안으로
+            signal { it.copy(brakeOn = false) }
+            delay(2_500)
+            signal { it.copy(brakeOn = true) }
             delay(1_500)
         }
+    }
+
+    companion object {
+        /** 후진 주차 장면: 핸들을 이만큼 돌려 놓고 이 시간 동안 후진한다(합성 후방 화면의 주차 칸 위치 계산에 쓴다) */
+        const val PARK_STEER_DEG = 360f
+        const val PARK_ARC_MS = 3_000L
     }
 }

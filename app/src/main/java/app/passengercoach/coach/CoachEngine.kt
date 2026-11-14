@@ -8,8 +8,8 @@ enum class GearKind { PARK, NEUTRAL, REVERSE, DRIVE, OTHER }
 
 enum class NaviTurnKind { LEFT, RIGHT, UTURN, OTHER }
 
-/** 해설이 속한 연습 상황: 회전(깜빡이, 핸들), 출발과 정차(브레이크, 기어), 주차(기어 R에서 일어난 모든 조작) */
-enum class CoachTopic { TURN, STOP, PARK }
+/** 해설이 속한 연습 상황: 회전(깜빡이, 핸들), 출발과 정차(브레이크, 기어), 주차(기어 R에서 일어난 모든 조작), 등화와 장치(전조등, 와이퍼, 안전벨트, 문) */
+enum class CoachTopic { TURN, STOP, PARK, DEVICE }
 
 /**
  * 코치 해설 규칙(요구서 F2 이벤트 감지, F3 코치 해설).
@@ -199,6 +199,24 @@ class CoachEngine {
         GearKind.OTHER -> null
     }
 
+    private val prevExtra = arrayOfNulls<Boolean>(5)
+
+    /** 전조등, 상향등, 와이퍼, 운전석 안전벨트 경고, 문 열림이 바뀌면 해설한다. 한 번에 하나만 말하고 나머지는 다음에 말한다. */
+    fun onExtras(lowBeamOn: Boolean?, highBeamOn: Boolean?, wiperOn: Boolean?, beltWarning: Boolean?, doorOpen: Boolean?): String? {
+        val now = arrayOf(lowBeamOn, highBeamOn, wiperOn, beltWarning, doorOpen)
+        for (i in now.indices) {
+            val value = now[i] ?: continue
+            val before = prevExtra[i]
+            prevExtra[i] = value
+            if (before == null || before == value) continue
+            val (text, reason) = EXTRA_LINES[i][if (value) 0 else 1]
+            why = reason
+            topic = CoachTopic.DEVICE
+            return text
+        }
+        return null
+    }
+
     /** 깜빡이를 켠 직후 같은 방향으로 핸들을 돌렸으면 한 동작으로 묶어 말한다. 차선 변경이라고 단정하지는 않는다. */
     private fun turnedMessage(dir: TurnDir, amount: String, nowMs: Long): String {
         val linked = !steeredAfterTurn && dir == turnOnDir && nowMs - turnOnAtMs <= LINK_WINDOW_MS
@@ -225,6 +243,15 @@ class CoachEngine {
     }
 
     companion object {
+        // 추가 조작별 (켜짐/참일 때, 꺼짐/거짓일 때)의 해설과 쓰임. 순서: 전조등, 상향등, 와이퍼, 안전벨트 경고, 문 열림
+        private val EXTRA_LINES = listOf(
+            listOf("전조등을 켰어요." to "전조등은 어두울 때 앞을 비추고, 내 차가 다른 차에 보이게 해요.", "전조등을 껐어요." to null),
+            listOf("상향등을 켰어요." to "상향등은 더 멀리 비춰요. 마주 오는 차가 있으면 눈이 부시지 않게 낮춰요.", "상향등을 껐어요." to null),
+            listOf("와이퍼를 켰어요." to "와이퍼는 비나 눈으로 앞이 흐릴 때 유리를 닦아요.", "와이퍼를 껐어요." to null),
+            listOf("운전석 안전벨트가 풀렸어요." to "안전벨트는 모든 좌석이 매요. (도로교통법 제50조)", "운전자가 안전벨트를 맸어요." to "안전벨트는 모든 좌석이 매요. (도로교통법 제50조)"),
+            listOf("문이 열렸어요." to "문을 열기 전에는 뒤에서 오는 차와 자전거를 확인해요.", "문이 모두 닫혔어요." to null),
+        )
+
         private const val STEER_WHY = "핸들을 돌린 쪽으로 차가 방향을 바꿔요."
         private const val REVERSE_WHY = "후진할 때는 핸들을 돌린 쪽으로 차 뒤쪽이 움직여요."
 
