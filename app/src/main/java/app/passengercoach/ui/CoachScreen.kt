@@ -139,7 +139,7 @@ private const val CONNECTING_MS = 3_000L
 /** 줄 세워 둔 해설을 이어서 말할 때 두는 틈(앞 문장을 읽을 시간) */
 private const val EXTRA_GAP_MS = 1_200L
 
-private enum class Page { MAIN, SETTINGS, RECORDS, ASKS, PREVIEW }
+private enum class Page { MAIN, SETTINGS, RECORDS, ASKS, PREVIEW, GUIDE }
 
 /** 연습 상황: 고른 상황의 해설만 보여 준다. 주행 전에 고르고, 주행 중에는 입력을 요구하지 않는다 */
 private enum class Topic(val label: String, val filter: CoachTopic?) {
@@ -209,7 +209,8 @@ private fun CoachApp(hub: SignalHub, navi: NaviHub, lights: TrafficLightHub, rou
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences("coach", Context.MODE_PRIVATE) }
     val records = remember { RecordStore(File(context.filesDir, RecordStore.FILE_NAME)) }
-    var page by remember { mutableStateOf(Page.MAIN) }
+    // 처음 쓰는 사람에게는 화면 안내를 먼저 보여 준다(한 번만, 설정에서 다시 볼 수 있다)
+    var page by remember { mutableStateOf(if (prefs.getBoolean("guide_seen", false)) Page.MAIN else Page.GUIDE) }
     var topic by remember { mutableStateOf(Topic.entries.getOrElse(prefs.getInt("topic", 0)) { Topic.ALL }) }
     var coachMode by remember { mutableStateOf(prefs.getBoolean("coach_mode", false)) }
     var recordOn by remember { mutableStateOf(prefs.getBoolean("record_on", false)) }
@@ -329,6 +330,7 @@ private fun CoachApp(hub: SignalHub, navi: NaviHub, lights: TrafficLightHub, rou
             },
             onRecords = { page = Page.RECORDS },
             onAsks = { page = Page.ASKS },
+            onGuide = { page = Page.GUIDE },
             classicUi = classicUi,
             onClassicUi = {
                 classicUi = it
@@ -339,6 +341,10 @@ private fun CoachApp(hub: SignalHub, navi: NaviHub, lights: TrafficLightHub, rou
         )
         Page.RECORDS -> RecordsScreen(records, "학습 기록", "기록이 없어요. 설정에서 학습 기록을 켜면 해설이 여기에 쌓여요.", onBack = { page = Page.SETTINGS })
         Page.ASKS -> RecordsScreen(asks, "물어볼 것", "아직 없어요. 주행 화면의 ? 버튼을 누르면 그 순간이 여기에 남아요.", onBack = { page = Page.SETTINGS }, onCleared = { asked = 0 })
+        Page.GUIDE -> GuideScreen(onDone = {
+            prefs.edit().putBoolean("guide_seen", true).apply()
+            page = Page.MAIN
+        })
         Page.PREVIEW -> {
             // 실제 내비의 현재 위치와 목적지로 길을 받는다(데모 중이어도 데모 값은 쓰지 않는다)
             val real = remember { navi.state.value }
@@ -401,6 +407,7 @@ private fun SettingsScreen(
     onRecordOn: (Boolean) -> Unit,
     onRecords: () -> Unit,
     onAsks: () -> Unit,
+    onGuide: () -> Unit,
     classicUi: Boolean,
     onClassicUi: (Boolean) -> Unit,
     onWithdraw: () -> Unit,
@@ -430,6 +437,7 @@ private fun SettingsScreen(
             OutlinedButton(onClick = onRecords) { Text("학습 기록 보기", fontSize = 20.sp) }
             OutlinedButton(onClick = onAsks) { Text("물어볼 것 보기", fontSize = 20.sp) }
         }
+        OutlinedButton(onClick = onGuide) { Text("사용법 다시 보기", fontSize = 20.sp) }
         SwitchRow("이전 화면 쓰기", "지도와 계기판 대신 글자 위주의 이전 화면을 보여 줘요.", classicUi, onClassicUi)
 
         Text("동의", fontSize = 22.sp, fontWeight = FontWeight.Bold)

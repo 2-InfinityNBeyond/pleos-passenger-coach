@@ -192,6 +192,19 @@ class CoachEngineTest {
     }
 
     @Test
+    fun `같은 조작이 되풀이되면 다른 요령을 돌아가며 보여 준다`() {
+        val e = CoachEngine()
+        e.feed(brake = false, at = 0)
+        val reasons = (1..4).map { i ->
+            e.feed(brake = true, at = i * 2_000L)
+            val on = e.why
+            e.feed(brake = false, at = i * 2_000L + 1_000L)
+            on
+        }
+        assertEquals(4, reasons.filterNotNull().distinct().size)
+    }
+
+    @Test
     fun `후진 주차는 핸들을 돌린 양과 브레이크를 떼는 순서를 해설한다`() {
         val e = CoachEngine()
         e.feed(gear = GearKind.DRIVE, brake = true, at = 0)
@@ -201,7 +214,8 @@ class CoachEngineTest {
         assertEquals("핸들을 왼쪽으로 한 바퀴 돌렸어요.", e.feed(gear = GearKind.REVERSE, brake = true, steering = 365f, at = 3_000))
         assertNull(e.feed(gear = GearKind.REVERSE, brake = true, steering = 350f, at = 3_500))
         assertEquals("핸들을 왼쪽으로 한 바퀴 돌려 놓고 브레이크를 뗐어요.", e.feed(gear = GearKind.REVERSE, brake = false, steering = 350f, at = 4_000))
-        assertEquals("후진할 때는 핸들을 돌린 쪽으로 차 뒤쪽이 움직여요.", e.why)
+        // 후진 중 세 번째 해설이라 세 번째 요령이 나온다(같은 말을 되풀이하지 않는다)
+        assertEquals("한 번에 넣으려 하지 않아요. 틀어지면 앞으로 조금 뺐다가 다시 들어가요.", e.why)
         assertEquals("돌렸던 핸들을 다시 풀고 있어요.", e.feed(gear = GearKind.REVERSE, steering = 250f, at = 5_000))
         assertNull(e.feed(gear = GearKind.REVERSE, steering = 120f, at = 5_500))
         assertEquals("핸들이 다시 가운데로 돌아왔어요.", e.feed(gear = GearKind.REVERSE, steering = 0f, at = 6_000))

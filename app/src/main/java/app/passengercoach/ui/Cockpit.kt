@@ -208,7 +208,37 @@ internal fun CockpitScreen(
             }
         }
 
-        Row(Modifier.fillMaxWidth().height(150.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        // 미리 가 보기 화면과 같은 배치: 지도 바로 아래에 해설 칸, 그 아래에 계기판
+        Row(Modifier.fillMaxWidth().height(72.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(
+                Modifier.weight(1f).fillMaxHeight().background(c.bar, RoundedCornerShape(20.dp)).padding(horizontal = 18.dp),
+                verticalArrangement = Arrangement.Center,
+            ) {
+                // 해설이 없고 멈춰 있을 때는 같은 칸에서 알아 두기 한 줄을 보여 준다
+                // 같은 말만 되풀이하지 않게 몇 초마다 다음 요령으로 넘긴다
+                val idleTip = tip?.lines?.let { it.getOrNull(((now / 9_000) % it.size.coerceAtLeast(1)).toInt()) }?.takeIf { message == null && (still || reversing) }
+                Text(
+                    message ?: idleTip ?: "운전자의 조작을 한 문장으로 알려 줘요",
+                    fontSize = if ((message ?: idleTip ?: "").length > 30) 16.sp else 19.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    color = if (message == null && idleTip == null || messageOld) c.barMuted else c.barText,
+                )
+                if (message != null && why != null) Text(why, fontSize = 15.sp, color = c.barMuted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                else if (idleTip != null && tip != null) Text("알아 두기 · ${tip.title}", fontSize = 15.sp, color = c.barMuted, maxLines = 1)
+            }
+            Box(
+                Modifier.size(64.dp).background(c.ask, RoundedCornerShape(22.dp)).clickable(role = Role.Button, onClick = onAsk).semantics { contentDescription = "나중에 물어볼 것으로 표시" },
+                contentAlignment = Alignment.Center,
+            ) {
+                Text("?", fontSize = 30.sp, fontWeight = FontWeight.Black, color = c.askText)
+                if (asked > 0) {
+                    Box(Modifier.align(Alignment.TopEnd).padding(6.dp).size(20.dp).background(c.askText, CircleShape), contentAlignment = Alignment.Center) {
+                        Text("$asked", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = c.ask)
+                    }
+                }
+            }
+        }
+
+        Row(Modifier.fillMaxWidth().height(142.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(
                 Modifier.weight(1f).fillMaxHeight().background(c.card, RoundedCornerShape(24.dp)).padding(horizontal = 14.dp),
                 horizontalArrangement = Arrangement.spacedBy(if (compact) 8.dp else 18.dp, Alignment.CenterHorizontally), verticalAlignment = Alignment.CenterVertically,
@@ -253,34 +283,6 @@ internal fun CockpitScreen(
                     contentAlignment = Alignment.Center,
                 ) {
                     Canvas(Modifier.size(28.dp)) { slidersGlyph(c.text) }
-                }
-            }
-        }
-
-        Row(Modifier.fillMaxWidth().height(64.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Column(
-                Modifier.weight(1f).fillMaxHeight().background(c.bar, RoundedCornerShape(20.dp)).padding(horizontal = 18.dp),
-                verticalArrangement = Arrangement.Center,
-            ) {
-                // 해설이 없고 멈춰 있을 때는 같은 칸에서 알아 두기 한 줄을 보여 준다
-                val idleTip = tip?.lines?.firstOrNull()?.takeIf { message == null && (still || reversing) }
-                Text(
-                    message ?: idleTip ?: "운전자의 조작을 한 문장으로 알려 줘요",
-                    fontSize = if ((message ?: idleTip ?: "").length > 30) 16.sp else 19.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                    color = if (message == null && idleTip == null || messageOld) c.barMuted else c.barText,
-                )
-                if (message != null && why != null) Text(why, fontSize = 13.sp, color = c.barMuted, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                else if (idleTip != null && tip != null) Text("알아 두기 · ${tip.title}", fontSize = 13.sp, color = c.barMuted, maxLines = 1)
-            }
-            Box(
-                Modifier.size(64.dp).background(c.ask, RoundedCornerShape(22.dp)).clickable(role = Role.Button, onClick = onAsk).semantics { contentDescription = "나중에 물어볼 것으로 표시" },
-                contentAlignment = Alignment.Center,
-            ) {
-                Text("?", fontSize = 30.sp, fontWeight = FontWeight.Black, color = c.askText)
-                if (asked > 0) {
-                    Box(Modifier.align(Alignment.TopEnd).padding(6.dp).size(20.dp).background(c.askText, CircleShape), contentAlignment = Alignment.Center) {
-                        Text("$asked", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = c.ask)
-                    }
                 }
             }
         }
@@ -340,11 +342,20 @@ private fun LightPart(direction: TurnType, phase: LightPhase?, atMs: Long, now: 
         LightColor.GREEN -> c.green
         LightColor.UNKNOWN -> c.muted
     }
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+    val seconds = TrafficLights.remainSeconds(phase, atMs, now)
+    Row(
+        Modifier.semantics { contentDescription = TrafficLights.colorName(phase.color) + (seconds?.let { " ${it}초" } ?: "") },
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp),
+    ) {
         Canvas(Modifier.size(18.dp)) { turnGlyph(direction, c.muted) }
-        Box(Modifier.size(14.dp).background(dot, CircleShape))
-        // 색만으로 구분하지 않도록 색 이름을 함께 쓴다
-        Text(TrafficLights.colorName(phase.color) + (TrafficLights.remainSeconds(phase, atMs, now)?.let { " $it" } ?: ""), fontSize = 17.sp, fontWeight = FontWeight.Black, color = c.text)
+        // 신호등 모양: 세 칸 중 지금 켜진 칸만 색이 들어온다(위 빨강, 가운데 노랑, 아래 초록). 색만이 아니라 자리로도 구분된다
+        Canvas(Modifier.size(18.dp, 46.dp)) {
+            drawRoundRect(Color(0xFF17162B), cornerRadius = CornerRadius(size.width / 2))
+            listOf(LightColor.RED, LightColor.YELLOW, LightColor.GREEN).forEachIndexed { i, lamp ->
+                drawCircle(if (phase.color == lamp) dot else Color(0xFF4B4A63), radius = size.width * 0.33f, center = Offset(size.width / 2, size.height * (0.19f + 0.31f * i)))
+            }
+        }
+        Text(seconds?.toString() ?: "-", fontSize = 22.sp, fontWeight = FontWeight.Black, color = c.text)
     }
 }
 
@@ -426,7 +437,7 @@ internal fun DrawScope.previewGlyph(color: Color) {
     drawLine(color, Offset(26f * k, 16f * k), Offset(26f * k, 21f * k), strokeWidth = 3.5f * k, cap = StrokeCap.Round)
 }
 
-private fun DrawScope.slidersGlyph(color: Color) {
+internal fun DrawScope.slidersGlyph(color: Color) {
     val w = size.width
     for ((i, knob) in listOf(0.3f, 0.7f, 0.45f).withIndex()) {
         val y = w * (0.22f + 0.28f * i)

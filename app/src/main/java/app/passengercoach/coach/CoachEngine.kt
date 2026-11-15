@@ -89,7 +89,7 @@ class CoachEngine {
             val before = prevBrake
             if (before != null && brakeOn != before) {
                 message = if (brakeOn) "브레이크를 밟았어요." else "브레이크를 뗐어요."
-                reason = if (brakeOn) "미리 가볍게 밟고, 멈추기 직전에 살짝 풀면 몸이 앞으로 쏠리지 않아요." else "발만 떼도 차가 천천히 나가요. 좁은 곳에서는 이 속도로만 움직여요."
+                reason = if (brakeOn) BRAKE_ON_WHY else BRAKE_OFF_WHY
                 kind = CoachTopic.STOP
                 // 주차의 핵심 순서: 핸들을 먼저 돌려 놓고 브레이크를 떼서 움직인다
                 val held = steeringDeg ?: lastSteer
@@ -114,7 +114,7 @@ class CoachEngine {
                     steeredAfterTurn = false
                     naviLinkMessage(turn, nowMs) ?: "${dirName(turn)} 깜빡이를 켰어요."
                 }
-                reason = if (turn == TurnDir.OFF) "핸들이 풀리면 저절로 꺼져요. 차로 변경처럼 조금만 돌렸을 땐 직접 꺼요." else "움직이기 전에 켜요. 회전은 30m 전부터, 차로 변경은 3초쯤 먼저 켜 둬요."
+                reason = if (turn == TurnDir.OFF) BLINK_OFF_WHY else BLINK_ON_WHY
                 kind = CoachTopic.TURN
             }
             prevTurn = turn
@@ -185,10 +185,20 @@ class CoachEngine {
         if (message != null) {
             // 후진 중에는 차 뒤쪽이 어디로 가는지가 핵심이므로 핸들 설명을 바꾸고, 주차 상황으로 분류한다
             val reversing = prevGear == GearKind.REVERSE
-            why = if (reversing && reason == STEER_WHY) REVERSE_WHY else reason
+            why = vary(if (reversing && reason == STEER_WHY) REVERSE_WHY else reason)
             topic = if (reversing) CoachTopic.PARK else kind
         }
         return message
+    }
+
+    private val shown = HashMap<String, Int>()
+
+    /** 같은 조작이 다시 나오면 같은 말을 되풀이하지 않고, 그 조작의 다른 요령을 돌아가며 보여 준다 */
+    private fun vary(reason: String?): String? {
+        val pool = VARIANTS[reason ?: return null] ?: return reason
+        val n = shown.getOrDefault(reason, 0)
+        shown[reason] = n + 1
+        return pool[n % pool.size]
     }
 
     private fun gearWhy(gear: GearKind): String? = when (gear) {
@@ -248,6 +258,8 @@ class CoachEngine {
         val matches = (kind == NaviTurnKind.LEFT && turn == TurnDir.LEFT) || (kind == NaviTurnKind.RIGHT && turn == TurnDir.RIGHT)
         if (!matches || naviSinceMs == 0L) return null
         val seconds = (nowMs - naviSinceMs) / 1000
+        // 주차한 채 오래 있다가 켜면 "100초 뒤"처럼 뜻 없는 숫자가 되므로, 오래 지났으면 초를 말하지 않는다
+        if (seconds > 60) return "내비가 ${if (turn == TurnDir.LEFT) "좌회전" else "우회전"}을 안내한 뒤, ${dirName(turn)} 깜빡이를 켰어요."
         return "내비가 ${if (turn == TurnDir.LEFT) "좌회전" else "우회전"}을 안내하고 ${seconds}초 뒤, ${dirName(turn)} 깜빡이를 켰어요."
     }
 
@@ -275,6 +287,53 @@ class CoachEngine {
 
         /** 줄 세워 둔 해설이 이보다 늦어지면 말하지 않는다(지난 일을 지금 일처럼 말하지 않으려고) */
         const val EXTRA_STALE_MS = 5_000L
+        private const val BLINK_ON_WHY = "움직이기 전에 켜요. 회전은 30m 전부터, 차로 변경은 3초쯤 먼저 켜 둬요."
+        private const val BLINK_OFF_WHY = "핸들이 풀리면 저절로 꺼져요. 차로 변경처럼 조금만 돌렸을 땐 직접 꺼요."
+        private const val BRAKE_ON_WHY = "미리 가볍게 밟고, 멈추기 직전에 살짝 풀면 몸이 앞으로 쏠리지 않아요."
+        private const val BRAKE_OFF_WHY = "발만 떼도 차가 천천히 나가요. 좁은 곳에서는 이 속도로만 움직여요."
+
+        /** 같은 조작에 돌아가며 보여 줄 요령들. 맨 앞이 처음 나오는 말이다. shortcut: 초안, 전문가 검수 뒤 교체 */
+        private val VARIANTS: Map<String, List<String>> by lazy {
+            mapOf(
+                BLINK_ON_WHY to listOf(
+                    BLINK_ON_WHY,
+                    "깜빡이를 켰다고 바로 들어가지 않아요. 켜고, 보고, 그다음에 움직여요.",
+                    "깜빡이는 비켜 달라는 뜻이 아니라 알리는 거예요. 틈이 있을 때만 들어가요.",
+                    "우회전하자마자 또 우회전할 땐, 첫 회전을 끝낸 뒤에 다시 켜야 뒤차가 안 헷갈려요.",
+                ),
+                BLINK_OFF_WHY to listOf(
+                    BLINK_OFF_WHY,
+                    "깜빡이를 켠 채 계속 달리면 뒤차가 헷갈려요. 끝나면 바로 꺼요.",
+                ),
+                BRAKE_ON_WHY to listOf(
+                    BRAKE_ON_WHY,
+                    "앞차만 보지 말고 두세 대 앞의 브레이크등을 보면 미리 밟을 수 있어요.",
+                    "횡단보도 앞에서는 사람이 건너려고 서 있기만 해도 멈춰요.",
+                    "멈출 땐 앞차 뒷바퀴가 보이는 거리에 서요.",
+                    "긴 내리막에서는 계속 밟고 있지 말고 나눠 밟아요.",
+                ),
+                BRAKE_OFF_WHY to listOf(
+                    BRAKE_OFF_WHY,
+                    "초록불로 바뀌어도 한 박자 쉬고 출발해요. 늦게 지나가는 차가 있어요.",
+                    "출발할 땐 가속 페달을 살살 밟아요. 확 밟으면 몸이 뒤로 젖혀져요.",
+                    "출발 전에 횡단보도에 아직 사람이 남아 있는지 한 번 더 봐요.",
+                ),
+                STEER_WHY to listOf(
+                    STEER_WHY,
+                    "돌기 전에 속도를 줄여요. 도는 중에 브레이크를 세게 밟으면 차가 흔들려요.",
+                    "핸들은 양손으로 9시와 3시 자리를 잡아요. 크게 돌릴 땐 손을 번갈아 넘겨요.",
+                    "돌고 나면 핸들이 저절로 풀리려 해요. 놓지 말고 손으로 따라가며 풀어요.",
+                ),
+                REVERSE_WHY to listOf(
+                    REVERSE_WHY,
+                    "후진 주차는 사이드미러로 주차선과 뒷바퀴 사이를 봐요. 양쪽 간격이 같아지면 핸들을 풀어요.",
+                    "한 번에 넣으려 하지 않아요. 틀어지면 앞으로 조금 뺐다가 다시 들어가요.",
+                    "T자 주차는 칸을 조금 지나쳐 세운 뒤, 핸들을 끝까지 돌리고 아주 천천히 들어가요.",
+                    "뒤가 들어갈 때 앞머리는 반대쪽으로 크게 돌아요. 앞 모서리와 옆 차 사이도 봐요.",
+                ),
+            )
+        }
+
         private const val STEER_WHY = "시선을 가려는 곳 멀리 두면 핸들은 따라가요. 돌린 만큼 풀어야 곧게 가요."
         private const val REVERSE_WHY = "후진할 때는 핸들을 돌린 쪽으로 차 뒤쪽이 움직여요."
 

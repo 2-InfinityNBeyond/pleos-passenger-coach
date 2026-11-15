@@ -158,7 +158,7 @@ internal fun PreviewScreen(here: LatLon?, dest: LatLon?, routes: RouteHub, roads
         }
 
         // 안내 칸은 지도를 가리지 않게 지도 바로 아래에 둔다(눈이 지도에서 조금만 내려오면 된다)
-        Row(Modifier.fillMaxWidth().height(64.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(Modifier.fillMaxWidth().height(72.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             val tip = when {
                 p == null -> null
                 current != null -> Preview.tip(p, current)
@@ -168,13 +168,13 @@ internal fun PreviewScreen(here: LatLon?, dest: LatLon?, routes: RouteHub, roads
             SpotBanner(current ?: next, atM, tip, c, Modifier.weight(1f).fillMaxHeight())
             if (current?.kind == SpotKind.BUSY) {
                 Canvas(
-                    Modifier.size(76.dp, 64.dp).background(c.card, RoundedCornerShape(20.dp))
+                    Modifier.size(76.dp, 72.dp).background(c.card, RoundedCornerShape(20.dp))
                         .semantics { contentDescription = "차로 변경 그림: 깜빡이를 켜고 옆 차로의 빈자리로 천천히 옮긴다" },
                 ) { laneChange(now, c) }
             }
         }
 
-        Row(Modifier.fillMaxWidth().height(126.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(Modifier.fillMaxWidth().height(124.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             // 그곳에서 하게 될 조작의 예상(실제 조작이 아니다)
             val (blinker, wheel) = if (p == null) null to 0f else Preview.expected(atM, p)
             Box(Modifier.weight(1f).fillMaxHeight().background(c.card, RoundedCornerShape(24.dp))) {
@@ -279,8 +279,8 @@ private fun SpotBanner(spot: Spot?, atM: Double, tip: Pair<String, String>?, c: 
         if (tip != null) {
             if (spot != null) Box(Modifier.size(1.dp, 44.dp).background(c.chipMuted.copy(alpha = 0.4f)))
             Column(Modifier.weight(1f, fill = false), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(tip.first, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = c.chipText, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                if (tip.second.isNotEmpty()) Text(tip.second, fontSize = 13.sp, color = c.chipMuted, maxLines = 2, lineHeight = 17.sp)
+                Text(tip.first, fontSize = 17.sp, fontWeight = FontWeight.Bold, color = c.chipText, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (tip.second.isNotEmpty()) Text(tip.second, fontSize = 15.sp, color = c.chipMuted, maxLines = 2, lineHeight = 19.sp)
             }
         }
     }
