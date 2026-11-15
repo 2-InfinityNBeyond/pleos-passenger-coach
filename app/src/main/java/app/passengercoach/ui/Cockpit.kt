@@ -131,6 +131,8 @@ internal fun CockpitScreen(
     val last = s.lastUpdateMs()
     val stale = DriveState.isStale(demoOn, !noSignal, last, now)
     val reversing = s.gear == VehicleGear.GEAR_REVERSE
+    // 주차 중에는 미리 가 보기가 지금 쓸 기능이라 글자와 함께 크게 보여 주고, 달리기 시작하면 작은 그림으로 줄인다
+    val parked = s.gear == VehicleGear.GEAR_PARK
 
     // 좁은 창(세로로 긴 화면, 나눠 쓰는 창)에서는 핸들을 줄이고 각도 숫자를 뺀다
     BoxWithConstraints(Modifier.fillMaxSize().background(c.bg)) {
@@ -216,12 +218,25 @@ internal fun CockpitScreen(
                     Text(recapText, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = c.barText, maxLines = 3, lineHeight = 22.sp)
                 } else {
                 Text(
-                    message ?: idleTip ?: "운전자의 조작을 한 문장으로 알려 줘요",
+                    message ?: idleTip ?: "운전자의 조작이 감지되면 이곳에 해설이 표시돼요",
                     fontSize = if ((message ?: idleTip ?: "").length > 30) 17.sp else 19.sp, fontWeight = FontWeight.Bold, maxLines = 2, lineHeight = 24.sp,
                     color = if (message == null && idleTip == null || messageOld) c.barMuted else c.barText,
                 )
                 if (message != null && why != null) Text(why, fontSize = 15.sp, color = c.barMuted, maxLines = 2, lineHeight = 20.sp)
                 else if (idleTip != null && tip != null) Text("알아 두기 · ${tip.title}", fontSize = 15.sp, color = c.barMuted, maxLines = 1)
+                }
+            }
+            if (parked) {
+                Row(
+                    Modifier.height(64.dp).guideRegion("PREVIEW", onRegion).background(c.accent, RoundedCornerShape(22.dp)).clickable(role = Role.Button, onClick = onPreview)
+                        .padding(horizontal = if (compact) 15.dp else 16.dp).semantics { contentDescription = "미리 가 보기: 출발 전에 오늘의 경로를 먼저 주행해 봅니다" },
+                    horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Canvas(Modifier.size(32.dp)) { previewGlyph(c.onAccent) }
+                    if (!compact) Column {
+                        Text("미리 가 보기", fontSize = 17.sp, fontWeight = FontWeight.Black, color = c.onAccent, maxLines = 1)
+                        Text("출발 전 경로 예습", fontSize = 12.sp, color = c.onAccent.copy(alpha = 0.8f), maxLines = 1)
+                    }
                 }
             }
             Box(
@@ -269,9 +284,9 @@ internal fun CockpitScreen(
                     }
                 }
             }
-            // 미리 가 보기와 설정은 출발 전에 쓰는 것이라 해설 칸 옆이 아니라 여기에 둔다(해설 칸을 넓게 쓰려고)
+            // 달리는 중에는 미리 가 보기를 작은 그림으로 여기에 둔다(주차 중에는 위 해설 칸 옆에 크게 나온다)
             Column(Modifier.width(60.dp).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Box(
+                if (!parked) Box(
                     Modifier.weight(1f).fillMaxWidth().guideRegion("PREVIEW", onRegion).background(c.accent, RoundedCornerShape(22.dp)).clickable(role = Role.Button, onClick = onPreview).semantics { contentDescription = "미리 가 보기" },
                     contentAlignment = Alignment.Center,
                 ) {
@@ -302,7 +317,7 @@ internal fun Pill(text: String, bg: Color, fg: Color, modifier: Modifier = Modif
 private fun TurnChip(n: NaviSnapshot, c: CockpitColors, modifier: Modifier) {
     val turn = n.turn
     if (turn == null) {
-        val text = if (!n.ready && n.error != null) "내비 정보를 받을 수 없어요" else "내비 안내 없음"
+        val text = if (!n.ready && n.error != null) "내비 정보를 수신할 수 없어요" else "내비 안내 없음"
         Pill(text, c.card, c.muted, modifier)
         return
     }

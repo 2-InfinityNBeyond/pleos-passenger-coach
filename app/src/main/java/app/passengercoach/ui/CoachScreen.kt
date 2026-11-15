@@ -187,10 +187,10 @@ private fun ConsentScreen(onAgree: () -> Unit) {
         Text("옆자리에서 보고 배우는 운전", fontSize = 18.sp, color = MutedColor)
         // 한 화면에 들어오도록 네 줄로 줄였다. 빠진 내용은 없다(보여 주는 것, 내보내는 것, 저장과 철회, 책임)
         listOf(
-            "운전자의 조작(핸들, 브레이크, 깜빡이, 기어)과 내비 안내를 이 화면에 보여 줘요. 차를 제어하지 않아요.",
-            "조작 데이터는 기기 밖으로 보내지 않아요. 지도와 길을 그리려고 현재 위치, 목적지와 그 사이 경로만 보내요.",
-            "학습 기록은 켠 경우에만 이 기기에 저장해요. 동의는 설정에서 언제든 철회할 수 있어요.",
-            "배움을 돕는 도구예요. 운전의 책임은 운전자에게 있어요.",
+            "운전자의 조작(핸들, 브레이크, 방향지시등, 기어)과 내비 안내를 이 화면에 표시해요. 차량은 제어하지 않아요.",
+            "조작 데이터는 기기 밖으로 전송하지 않아요. 지도와 경로 표시에 필요한 현재 위치, 목적지, 경로만 전송해요.",
+            "학습 기록은 켰을 때만 이 기기에 저장돼요. 동의는 설정에서 언제든 철회할 수 있어요.",
+            "학습을 돕는 도구예요. 운전의 책임은 운전자에게 있어요.",
         ).forEach { Text("• $it", fontSize = 18.sp) }
         // 조작이 화면에 보이는 사람은 운전자이므로, 운전자의 동의를 따로 받는다
         Row(
@@ -198,14 +198,14 @@ private fun ConsentScreen(onAgree: () -> Unit) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Checkbox(checked = driverOk, onCheckedChange = { driverOk = it })
-            Text("운전자: 내 조작이 이 화면에 보이는 것에 동의해요. (운전자가 직접 눌러 주세요)", fontSize = 18.sp)
+            Text("운전자: 내 조작이 이 화면에 표시되는 것에 동의해요. (운전자가 직접 눌러 주세요)", fontSize = 18.sp)
         }
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Button(onClick = onAgree, enabled = driverOk) { Text("동의하고 시작", fontSize = 22.sp) }
             OutlinedButton(onClick = { declined = true }) { Text("동의하지 않음", fontSize = 22.sp) }
         }
-        if (!driverOk) Text("운전자가 동의해야 시작할 수 있어요.", fontSize = 18.sp, color = MutedColor)
-        if (declined) Text("동의하지 않으면 앱을 쓸 수 없어요. 마음이 바뀌면 '동의하고 시작'을 눌러 주세요.", fontSize = 18.sp, color = MutedColor)
+        if (!driverOk) Text("운전자의 동의가 있어야 시작할 수 있어요.", fontSize = 18.sp, color = MutedColor)
+        if (declined) Text("동의하지 않으면 앱을 사용할 수 없어요. 준비되면 '동의하고 시작'을 눌러 주세요.", fontSize = 18.sp, color = MutedColor)
     }
 }
 
@@ -362,8 +362,8 @@ private fun CoachApp(hub: SignalHub, navi: NaviHub, lights: TrafficLightHub, rou
             onWithdraw = onWithdraw,
             onBack = { page = Page.MAIN },
         )
-        Page.RECORDS -> RecordsScreen(records, "학습 기록", "설정에서 학습 기록을 켜면 해설이 여기에 쌓여요.", onBack = { page = Page.SETTINGS })
-        Page.ASKS -> RecordsScreen(asks, "물어볼 것", "주행 화면의 ? 버튼을 누르면 그 순간이 여기에 남아요.", onBack = { page = Page.SETTINGS }, onCleared = { asked = 0 })
+        Page.RECORDS -> RecordsScreen(records, "학습 기록", "설정에서 학습 기록을 켜면 주행 중 해설이 시간순으로 저장돼요.", onBack = { page = Page.SETTINGS })
+        Page.ASKS -> RecordsScreen(asks, "저장한 순간", "주행 화면의 ? 버튼을 누르면 그 순간이 여기에 저장돼요.", onBack = { page = Page.SETTINGS }, onCleared = { asked = 0 })
         Page.PREVIEW -> {
             // 실제 내비의 현재 위치와 목적지로 길을 받는다(데모 중이어도 데모 값은 쓰지 않는다)
             val real = remember { navi.state.value }
@@ -450,20 +450,20 @@ private fun SettingsScreen(
             Text("설정", fontSize = 26.sp, fontWeight = FontWeight.Black, color = c.text)
             Chip("돌아가기", c.accent, c.onAccent, onBack)
         }
-        SettingsCard(c, "연습 상황", "고른 상황의 해설만 보여 줘요") {
+        SettingsCard(c, "연습 상황", "선택한 상황의 해설만 표시해요") {
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Topic.entries.forEach { t -> Chip(t.label, if (t == topic) c.accent else c.off, if (t == topic) c.onAccent else c.text) { onTopic(t) } }
             }
         }
-        SettingsCard(c, "보는 방식", null) {
-            ToggleRow(c, "코치 모드", "요령 줄을 숨기고 일어난 일만 보여 줘요. 강사가 직접 설명할 때 써요.", coachMode, onCoachMode)
-            ToggleRow(c, "이전 화면 쓰기", "지도와 계기판 대신 글자 위주의 이전 화면을 보여 줘요.", classicUi, onClassicUi)
+        SettingsCard(c, "표시 방식", null) {
+            ToggleRow(c, "코치 모드", "운전 요령을 숨기고 조작 내용만 표시해요. 강사가 직접 설명할 때 적합해요.", coachMode, onCoachMode)
+            ToggleRow(c, "이전 화면 사용", "지도와 계기판 대신 글자 중심의 이전 화면으로 표시해요.", classicUi, onClassicUi)
         }
-        SettingsCard(c, "기록", "이 기기 안에만 저장해요") {
-            ToggleRow(c, "학습 기록", "해설 문장과 시각을 남겨요. 밖으로 보내지 않아요.", recordOn, onRecordOn)
+        SettingsCard(c, "기록", "이 기기에만 저장돼요") {
+            ToggleRow(c, "학습 기록", "해설 문장과 시각을 기록해요. 외부로 전송하지 않아요.", recordOn, onRecordOn)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Chip("학습 기록 보기", c.off, c.text, onRecords)
-                Chip("물어볼 것 보기", c.ask, c.askText, onAsks)
+                Chip("저장한 순간 보기", c.ask, c.askText, onAsks)
             }
         }
         SettingsCard(c, "도움말과 동의", null) {
@@ -473,7 +473,7 @@ private fun SettingsScreen(
                     Chip("동의 철회", c.off, c.redText) { confirmWithdraw = true }
                 }
             } else {
-                Text("철회하면 학습 기록과 설정이 지워지고 처음 화면으로 돌아가요.", fontSize = 16.sp, color = c.text)
+                Text("철회하면 학습 기록과 설정이 삭제되고 처음 화면으로 돌아가요.", fontSize = 16.sp, color = c.text)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Chip("철회하기", c.red, Color.White, onWithdraw)
                     Chip("취소", c.off, c.text) { confirmWithdraw = false }
@@ -546,7 +546,7 @@ private fun RecordsScreen(records: RecordStore, title: String, emptyText: String
             SettingsCard(c, "아직 없어요", null) { Text(emptyText, fontSize = 16.sp, color = c.muted) }
         } else {
             Row(Modifier.fillMaxWidth().padding(start = 8.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Text("최근 ${items.size}개 · 이 기기 안에만 있어요", fontSize = 15.sp, color = c.muted)
+                Text("최근 ${items.size}개 · 이 기기에만 저장돼요", fontSize = 15.sp, color = c.muted)
                 Chip("모두 지우기", c.off, c.redText) {
                     records.clear()
                     list = emptyList()

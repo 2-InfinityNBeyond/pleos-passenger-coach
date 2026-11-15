@@ -93,8 +93,8 @@ internal fun PreviewScreen(here: LatLon?, dest: LatLon?, routes: RouteHub, roads
             ?: Preview.fromShape(DemoRoute.points)
         why = when {
             !p.sample || !routes.hasKey -> null
-            dest == null -> "내비에 목적지를 정하면 그 길을 보여 줘요"
-            else -> "길을 받지 못했어요"
+            dest == null -> "내비에 목적지를 설정하면 해당 경로로 안내해요"
+            else -> "경로를 불러오지 못했어요"
         }
         plan = p
         dlog("Preview") { "PREVIEW sample=${p.sample} lengthM=${p.lengthM.toInt()} spots=${p.spots.map { it.kind }}" }
@@ -140,7 +140,7 @@ internal fun PreviewScreen(here: LatLon?, dest: LatLon?, routes: RouteHub, roads
 
         Box(Modifier.weight(1f).fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(c.mapBase)) {
             if (p == null) {
-                Text("길을 찾는 중", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = c.muted, modifier = Modifier.align(Alignment.Center))
+                Text("경로를 불러오는 중", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = c.muted, modifier = Modifier.align(Alignment.Center))
             } else {
                 val car = RouteMath.along(p.points, atM).first
                 // 꺾이는 곳에서 지도가 한 번에 돌지 않게, 조금 뒤와 조금 앞을 이은 방향을 쓴다
@@ -165,7 +165,7 @@ internal fun PreviewScreen(here: LatLon?, dest: LatLon?, routes: RouteHub, roads
             val tip = when {
                 p == null -> null
                 current != null -> Preview.tip(p, current)
-                done -> "도착했어요. 짚어 본 곳은 ${p.spots.size}곳이에요" to ""
+                done -> "도착했어요. 주요 지점 ${p.spots.size}곳을 확인했어요" to ""
                 else -> null
             }
             SpotBanner(current ?: next, atM, tip, c, Modifier.weight(1f).fillMaxHeight().heightIn(min = 72.dp))
@@ -193,7 +193,7 @@ internal fun PreviewScreen(here: LatLon?, dest: LatLon?, routes: RouteHub, roads
             }
             // 오늘 길에서 짚어 줄 곳들. 누르면 그 앞으로 건너뛴다
             Box(Modifier.weight(1.15f).fillMaxHeight().background(c.card, RoundedCornerShape(24.dp))) {
-                Text(if (p == null) "" else "짚어 볼 곳 ${p.spots.size}", fontSize = 13.sp, color = c.muted, modifier = Modifier.padding(start = 16.dp, top = 10.dp))
+                Text(if (p == null) "" else "주요 지점 ${p.spots.size}", fontSize = 13.sp, color = c.muted, modifier = Modifier.padding(start = 16.dp, top = 10.dp))
                 if (p != null) {
                     Canvas(
                         Modifier.fillMaxSize().padding(horizontal = 22.dp).semantics { contentDescription = "경로에서 짚어 볼 곳 ${p.spots.size}곳. 누르면 그곳 앞으로 건너뜁니다" }
