@@ -147,10 +147,6 @@ internal fun PreviewScreen(here: LatLon?, dest: LatLon?, routes: RouteHub, roads
                 Box(Modifier.fillMaxWidth().height(64.dp).background(Brush.verticalGradient(listOf(c.bg.copy(alpha = 0.75f), Color.Transparent))))
                 Text("© OpenStreetMap contributors", fontSize = 10.sp, color = c.muted, modifier = Modifier.align(Alignment.BottomEnd).padding(end = 12.dp, bottom = 4.dp))
 
-                // 무엇이 나오는지와 그곳의 요령을 지도 위 한 칸에 모은다(눈이 지도와 이 칸만 오가면 되게)
-                val spot = current ?: next
-                val tip = current?.let { Preview.tip(p, it) } ?: if (done) "도착했어요. 짚어 본 곳은 ${p.spots.size}곳이에요" to "" else null
-                if (spot != null || tip != null) SpotBanner(spot, atM, tip, c, Modifier.align(Alignment.TopStart).padding(12.dp))
                 Column(Modifier.align(Alignment.BottomStart).padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     why?.let { Pill(it, c.card, c.muted) }
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -158,16 +154,27 @@ internal fun PreviewScreen(here: LatLon?, dest: LatLon?, routes: RouteHub, roads
                         if (p.sample) Pill("연습 코스(시험 자료)", c.ask, c.askText)
                     }
                 }
-                if (current?.kind == SpotKind.BUSY) {
-                    Canvas(
-                        Modifier.align(Alignment.BottomEnd).padding(14.dp).size(120.dp, 110.dp).background(c.card, RoundedCornerShape(18.dp))
-                            .semantics { contentDescription = "차로 변경 그림: 깜빡이를 켜고 옆 차로의 빈자리로 천천히 옮긴다" },
-                    ) { laneChange(now, c) }
-                }
             }
         }
 
-        Row(Modifier.fillMaxWidth().height(150.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        // 안내 칸은 지도를 가리지 않게 지도 바로 아래에 둔다(눈이 지도에서 조금만 내려오면 된다)
+        Row(Modifier.fillMaxWidth().height(64.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            val tip = when {
+                p == null -> null
+                current != null -> Preview.tip(p, current)
+                done -> "도착했어요. 짚어 본 곳은 ${p.spots.size}곳이에요" to ""
+                else -> null
+            }
+            SpotBanner(current ?: next, atM, tip, c, Modifier.weight(1f).fillMaxHeight())
+            if (current?.kind == SpotKind.BUSY) {
+                Canvas(
+                    Modifier.size(76.dp, 64.dp).background(c.card, RoundedCornerShape(20.dp))
+                        .semantics { contentDescription = "차로 변경 그림: 깜빡이를 켜고 옆 차로의 빈자리로 천천히 옮긴다" },
+                ) { laneChange(now, c) }
+            }
+        }
+
+        Row(Modifier.fillMaxWidth().height(126.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             // 그곳에서 하게 될 조작의 예상(실제 조작이 아니다)
             val (blinker, wheel) = if (p == null) null to 0f else Preview.expected(atM, p)
             Box(Modifier.weight(1f).fillMaxHeight().background(c.card, RoundedCornerShape(24.dp))) {
@@ -177,7 +184,7 @@ internal fun PreviewScreen(here: LatLon?, dest: LatLon?, routes: RouteHub, roads
                     Blinker(left = true, on = blinker == true, lit = lit, c = c)
                     // 길 모양으로 어림한 값이라 꺾이는 점에서 한 번에 바뀐다. 실제 핸들처럼 부드럽게 돌려 보여 준다
                     val shown by androidx.compose.animation.core.animateFloatAsState(wheel, androidx.compose.animation.core.tween(700), label = "wheel")
-                    CockpitWheel(shown, 108.dp, c.text, c.accent)
+                    CockpitWheel(shown, 88.dp, c.text, c.accent)
                     Blinker(left = false, on = blinker == false, lit = lit, c = c)
                 }
             }
@@ -202,7 +209,7 @@ internal fun PreviewScreen(here: LatLon?, dest: LatLon?, routes: RouteHub, roads
             // 멈춤과 닫기는 오른쪽 끝에 세로로 둔다(아래 줄을 없애 지도를 키웠다)
             Column(Modifier.fillMaxHeight(), verticalArrangement = Arrangement.SpaceBetween) {
             Box(
-                Modifier.size(64.dp).background(c.accent, RoundedCornerShape(22.dp)).semantics { contentDescription = if (done) "처음부터 다시" else if (playing) "멈춤" else "계속" }
+                Modifier.size(58.dp).background(c.accent, RoundedCornerShape(20.dp)).semantics { contentDescription = if (done) "처음부터 다시" else if (playing) "멈춤" else "계속" }
                     .clickable(role = Role.Button) {
                         if (done) atM = 0.0
                         playing = done || !playing
@@ -219,7 +226,7 @@ internal fun PreviewScreen(here: LatLon?, dest: LatLon?, routes: RouteHub, roads
                 }
             }
             Box(
-                Modifier.size(64.dp).background(c.card, RoundedCornerShape(22.dp)).clickable(role = Role.Button, onClick = onClose).semantics { contentDescription = "닫기" },
+                Modifier.size(58.dp).background(c.card, RoundedCornerShape(20.dp)).clickable(role = Role.Button, onClick = onClose).semantics { contentDescription = "닫기" },
                 contentAlignment = Alignment.Center,
             ) {
                 Canvas(Modifier.size(22.dp)) {
@@ -257,7 +264,7 @@ private fun glyphOf(kind: SpotKind): Glyph = when (kind) {
 @Composable
 private fun SpotBanner(spot: Spot?, atM: Double, tip: Pair<String, String>?, c: CockpitColors, modifier: Modifier) {
     Row(
-        modifier.widthIn(max = if (tip == null) 360.dp else 600.dp).background(c.chip, RoundedCornerShape(20.dp)).padding(start = 12.dp, end = 18.dp, top = 10.dp, bottom = 10.dp),
+        modifier.background(c.chip, RoundedCornerShape(20.dp)).padding(start = 12.dp, end = 18.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically,
     ) {
         if (spot != null) {
@@ -266,13 +273,13 @@ private fun SpotBanner(spot: Spot?, atM: Double, tip: Pair<String, String>?, c: 
             Column {
                 Text(if (left > 5) distanceText(left) else "여기", fontSize = 28.sp, fontWeight = FontWeight.Black, color = c.chipText, maxLines = 1)
                 val title = Preview.title(spot.kind)
-                Text(if (spot.name.isBlank() || spot.name == title) title else "$title · ${spot.name}", fontSize = 13.sp, fontWeight = FontWeight.Medium, color = c.chipMuted, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 150.dp))
+                Text(if (spot.name.isBlank() || spot.name == title) title else "$title · ${spot.name}", fontSize = 13.sp, fontWeight = FontWeight.Medium, color = c.chipMuted, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 120.dp))
             }
         }
         if (tip != null) {
             if (spot != null) Box(Modifier.size(1.dp, 44.dp).background(c.chipMuted.copy(alpha = 0.4f)))
             Column(Modifier.weight(1f, fill = false), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(tip.first, fontSize = 17.sp, fontWeight = FontWeight.Bold, color = c.chipText, maxLines = 2, lineHeight = 21.sp)
+                Text(tip.first, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = c.chipText, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 if (tip.second.isNotEmpty()) Text(tip.second, fontSize = 13.sp, color = c.chipMuted, maxLines = 2, lineHeight = 17.sp)
             }
         }
