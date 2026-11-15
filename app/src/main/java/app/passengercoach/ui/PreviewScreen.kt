@@ -17,7 +17,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -193,7 +193,7 @@ internal fun PreviewScreen(here: LatLon?, dest: LatLon?, routes: RouteHub, roads
             }
             // 오늘 길에서 짚어 줄 곳들. 누르면 그 앞으로 건너뛴다
             Box(Modifier.weight(1.15f).fillMaxHeight().background(c.card, RoundedCornerShape(24.dp))) {
-                Text(if (p == null) "" else "주요 지점 ${p.spots.size}", fontSize = 13.sp, color = c.muted, modifier = Modifier.padding(start = 16.dp, top = 10.dp))
+                Text(if (p == null) "" else "주요 지점 ${p.spots.size} · 누르면 그곳으로 이동", fontSize = 13.sp, color = c.muted, modifier = Modifier.padding(start = 16.dp, top = 10.dp))
                 if (p != null) {
                     Canvas(
                         Modifier.fillMaxSize().padding(horizontal = 22.dp).semantics { contentDescription = "경로에서 짚어 볼 곳 ${p.spots.size}곳. 누르면 그곳 앞으로 건너뜁니다" }
@@ -273,10 +273,11 @@ private fun SpotBanner(spot: Spot?, atM: Double, tip: Pair<String, String>?, c: 
         if (spot != null) {
             val left = spot.atM - atM
             Canvas(Modifier.size(44.dp)) { glyph(glyphOf(spot.kind), c.chipText) }
-            Column {
+            // 남은 거리 숫자의 길이가 바뀌어도 오른쪽 요령 글자가 움직이지 않게 너비를 고정한다
+            Column(Modifier.width(120.dp)) {
                 Text(if (left > 5) distanceText(left) else "여기", fontSize = 28.sp, fontWeight = FontWeight.Black, color = c.chipText, maxLines = 1)
                 val title = Preview.title(spot.kind)
-                Text(if (spot.name.isBlank() || spot.name == title) title else "$title · ${spot.name}", fontSize = 13.sp, fontWeight = FontWeight.Medium, color = c.chipMuted, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 120.dp))
+                Text(if (spot.name.isBlank() || spot.name == title) title else "$title · ${spot.name}", fontSize = 13.sp, fontWeight = FontWeight.Medium, color = c.chipMuted, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
         if (tip != null) {

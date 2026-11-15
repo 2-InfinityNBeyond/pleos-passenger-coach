@@ -171,7 +171,8 @@ internal fun CockpitScreen(
                         val color = if (i == 0) c.text else c.muted
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.semantics { contentDescription = turnName(step.type, null) }) {
                             Canvas(Modifier.size(22.dp)) { turnGlyph(step.type, color) }
-                            Text(distanceText(step.distanceM), fontSize = 16.sp, fontWeight = FontWeight.Bold, color = color)
+                            // 숫자 길이가 바뀌어도 칸과 그림이 움직이지 않게 너비를 고정한다
+                            Text(distanceText(step.distanceM), fontSize = 16.sp, fontWeight = FontWeight.Bold, color = color, maxLines = 1, modifier = Modifier.width(54.dp))
                         }
                     }
                 }
@@ -179,7 +180,7 @@ internal fun CockpitScreen(
 
             Column(Modifier.align(Alignment.TopStart).padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (!reversing) TurnChip(n, c, Modifier)
-                // 글자를 줄이려고 알아 두기는 첫 줄만 보여 준다(두 줄 모두는 이전 화면에서 볼 수 있다)
+                // 글자를 줄이려고 알아 두기는 첫 줄만 보여 준다(두 줄 모두는 글자 화면에서 볼 수 있다)
                 // 달리는 중에는 지도를 가리지 않게 알아 두기를 띄우지 않는다(멈췄을 때와 후진할 때만)
             val tipLines = tip?.lines?.take(1)?.takeIf { still || reversing }
                 // 방금 한 조작과 알아 두기는 지도를 가리지 않게 아래 해설 칸에서 보여 준다
@@ -240,7 +241,7 @@ internal fun CockpitScreen(
                 }
             }
             Box(
-                Modifier.size(64.dp).guideRegion("ASK", onRegion).background(c.ask, RoundedCornerShape(22.dp)).clickable(role = Role.Button, onClick = onAsk).semantics { contentDescription = "나중에 물어볼 것으로 표시" },
+                Modifier.size(64.dp).guideRegion("ASK", onRegion).background(c.ask, RoundedCornerShape(22.dp)).clickable(role = Role.Button, onClick = onAsk).semantics { contentDescription = "이 순간 저장" },
                 contentAlignment = Alignment.Center,
             ) {
                 Text("?", fontSize = 30.sp, fontWeight = FontWeight.Black, color = c.askText)
@@ -326,8 +327,9 @@ private fun TurnChip(n: NaviSnapshot, c: CockpitColors, modifier: Modifier) {
         horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically,
     ) {
         Canvas(Modifier.size(44.dp)) { turnGlyph(turn, c.chipText) }
-        Column {
-            Text(n.turnDistanceM?.let { distanceText(it) } ?: "", fontSize = 30.sp, fontWeight = FontWeight.Black, color = c.chipText)
+        // 남은 거리 숫자의 길이가 바뀌어도 칩 크기가 변하지 않게 최소 너비를 둔다
+        Column(Modifier.widthIn(min = 104.dp)) {
+            Text(n.turnDistanceM?.let { distanceText(it) } ?: "", fontSize = 30.sp, fontWeight = FontWeight.Black, color = c.chipText, maxLines = 1)
             Text(turnName(turn, n.turnText), fontSize = 14.sp, fontWeight = FontWeight.Medium, color = c.chipMuted, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }

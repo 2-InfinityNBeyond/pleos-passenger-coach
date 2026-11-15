@@ -219,7 +219,7 @@ private fun CoachApp(hub: SignalHub, navi: NaviHub, lights: TrafficLightHub, rou
     var topic by remember { mutableStateOf(Topic.entries.getOrElse(prefs.getInt("topic", 0)) { Topic.ALL }) }
     var coachMode by remember { mutableStateOf(prefs.getBoolean("coach_mode", false)) }
     var recordOn by remember { mutableStateOf(prefs.getBoolean("record_on", false)) }
-    // 이전 화면(글자 위주)을 남겨 두고 설정에서 고를 수 있게 한다
+    // 글자 위주 화면을 남겨 두고 설정에서 고를 수 있게 한다
     var classicUi by remember { mutableStateOf(prefs.getBoolean("classic_ui", false)) }
     // "물어볼 것": 궁금한 순간을 한 번 눌러 남겨 두었다가 주차한 뒤에 본다
     val asks = remember { RecordStore(File(context.filesDir, RecordStore.ASKS_FILE)) }
@@ -310,8 +310,8 @@ private fun CoachApp(hub: SignalHub, navi: NaviHub, lights: TrafficLightHub, rou
             why = engine.why
             messageAtMs = at
             dlog("Coach") { "MESSAGE $text | $why" }
-            // 시험 자료(데모)는 실제 조작이 아니므로 기록하지 않는다
-            if (recordNow && !demoOn) withContext(Dispatchers.IO) { runCatching { records.add(at, text) } }
+            // 그때 나온 요령도 함께 남긴다(탭으로 구분). 시험 자료(데모)는 실제 조작이 아니므로 표시를 붙인다
+            if (recordNow) withContext(Dispatchers.IO) { runCatching { records.add(at, listOfNotNull((if (demoOn) "[데모] " else "") + text, engine.why).joinToString("	")) } }
         }
     }
     LaunchedEffect(demoOn) {
@@ -362,8 +362,8 @@ private fun CoachApp(hub: SignalHub, navi: NaviHub, lights: TrafficLightHub, rou
             onWithdraw = onWithdraw,
             onBack = { page = Page.MAIN },
         )
-        Page.RECORDS -> RecordsScreen(records, "학습 기록", "설정에서 학습 기록을 켜면 주행 중 해설이 시간순으로 저장돼요.", onBack = { page = Page.SETTINGS })
-        Page.ASKS -> RecordsScreen(asks, "저장한 순간", "주행 화면의 ? 버튼을 누르면 그 순간이 여기에 저장돼요.", onBack = { page = Page.SETTINGS }, onCleared = { asked = 0 })
+        Page.RECORDS -> RecordsScreen(records, "학습 기록", "설정에서 학습 기록을 켠 뒤부터 나오는 해설과 요령이 시간순으로 저장돼요.", onBack = { page = Page.SETTINGS })
+        Page.ASKS -> RecordsScreen(asks, "저장한 순간", "주행 화면의 ? 버튼을 누르면 그 순간의 해설과 요령이 여기에 저장돼요.", onBack = { page = Page.SETTINGS }, onCleared = { asked = 0 })
         Page.PREVIEW -> {
             // 실제 내비의 현재 위치와 목적지로 길을 받는다(데모 중이어도 데모 값은 쓰지 않는다)
             val real = remember { navi.state.value }
@@ -411,7 +411,8 @@ private fun CoachApp(hub: SignalHub, navi: NaviHub, lights: TrafficLightHub, rou
                         // 그 순간에 보이던 해설을 남긴다. 해설이 없으면 시각만 남는다
                         val at = System.currentTimeMillis()
                         asked += 1
-                        asks.add(at, shownMessage ?: "표시한 순간")
+                        // 그때 화면에 나온 요령도 함께 남긴다(탭으로 구분)
+                        asks.add(at, listOfNotNull(shownMessage ?: "해설이 없던 순간", if (shownMessage != null) shownWhy else shownTip?.lines?.firstOrNull()?.takeIf { still }).joinToString("	"))
                     },
                 )
             }
@@ -457,10 +458,10 @@ private fun SettingsScreen(
         }
         SettingsCard(c, "표시 방식", null) {
             ToggleRow(c, "코치 모드", "운전 요령을 숨기고 조작 내용만 표시해요. 강사가 직접 설명할 때 적합해요.", coachMode, onCoachMode)
-            ToggleRow(c, "이전 화면 사용", "지도와 계기판 대신 글자 중심의 이전 화면으로 표시해요.", classicUi, onClassicUi)
+            ToggleRow(c, "글자로 보기", "지도와 계기판 대신 조작과 해설을 글자로 표시해요.", classicUi, onClassicUi)
         }
         SettingsCard(c, "기록", "이 기기에만 저장돼요") {
-            ToggleRow(c, "학습 기록", "해설 문장과 시각을 기록해요. 외부로 전송하지 않아요.", recordOn, onRecordOn)
+            ToggleRow(c, "학습 기록", "켠 뒤부터 나오는 해설과 요령을 시각과 함께 기록해요. 외부로 전송하지 않아요.", recordOn, onRecordOn)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Chip("학습 기록 보기", c.off, c.text, onRecords)
                 Chip("저장한 순간 보기", c.ask, c.askText, onAsks)
@@ -556,7 +557,8 @@ private fun RecordsScreen(records: RecordStore, title: String, emptyText: String
             items.asReversed().forEach { r ->
                 Column(Modifier.fillMaxWidth().background(c.card, RoundedCornerShape(20.dp)).padding(horizontal = 18.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Text(format.format(Date(r.atMs)), fontSize = 14.sp, color = c.muted)
-                    Text(r.text, fontSize = 18.sp, fontWeight = FontWeight.Bold, color = c.text)
+                    Text(r.text.substringBefore('	'), fontSize = 18.sp, fontWeight = FontWeight.Bold, color = c.text)
+                    r.text.substringAfter('	', "").takeIf { it.isNotEmpty() }?.let { Text(it, fontSize = 15.sp, color = c.muted) }
                 }
             }
         }
