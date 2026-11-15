@@ -331,7 +331,7 @@ private fun CoachApp(hub: SignalHub, navi: NaviHub, lights: TrafficLightHub, rou
             PreviewScreen(
                 here = real.lat?.let { lat -> real.lon?.let { LatLon(lat, it) } },
                 dest = real.destLat?.let { lat -> real.destLon?.let { LatLon(lat, it) } },
-                routes = routes, roads = roads, sampleRoads = demoRoads, onClose = { page = Page.MAIN },
+                routes = routes, roads = roads, onClose = { page = Page.MAIN },
             )
         }
         Page.MAIN -> {

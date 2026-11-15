@@ -4,6 +4,8 @@ import android.util.Log
 import app.passengercoach.coach.LatLon
 import app.passengercoach.coach.Preview
 import app.passengercoach.coach.PreviewRoute
+import app.passengercoach.coach.Spot
+import app.passengercoach.coach.SpotKind
 import app.passengercoach.coach.RouteMath
 import app.passengercoach.dlog
 import kotlinx.coroutines.CoroutineScope
@@ -152,6 +154,16 @@ class RouteHub(private val apiKey: String) {
             val guides = spots.map { Triple(RouteMath.alongOf(line, it.first), it.second, it.third) }
             val minutes = (route.optJSONObject("summary")?.optInt("duration", 0) ?: 0) / 60
             return PreviewRoute(line, Preview.spots(guides, busy), RouteMath.lengthM(line), minutes)
+        }
+
+        /** 앱에 넣어 둔 연습 코스(시험 자료)를 읽는다. 길 모양과 안내 지점은 OpenStreetMap 자료다(공개 OSRM 시험 서버로 한 번 받음) */
+        fun parseSample(body: String): PreviewRoute {
+            val o = JSONObject(body)
+            val p = o.getJSONArray("points")
+            val points = (0 until p.length()).map { p.getJSONArray(it).let { a -> LatLon(a.getDouble(0), a.getDouble(1)) } }
+            val s = o.getJSONArray("spots")
+            val spots = (0 until s.length()).map { s.getJSONArray(it).let { a -> Spot(a.getDouble(0), SpotKind.valueOf(a.getString(1)), a.getString(2)) } }
+            return PreviewRoute(points, spots, RouteMath.lengthM(points), o.getInt("minutes"), sample = true)
         }
 
         private const val TAG = "RouteLab"

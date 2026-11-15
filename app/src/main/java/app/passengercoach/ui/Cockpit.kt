@@ -432,7 +432,7 @@ private fun DrawScope.slidersGlyph(color: Color) {
     }
 }
 
-internal enum class Glyph { LEFT, RIGHT, STRAIGHT, UTURN, OVER, UNDER, ROUNDABOUT, ARRIVE, MERGE, TOLL, BUSY }
+internal enum class Glyph { LEFT, RIGHT, STRAIGHT, UTURN, OVER, UNDER, ROUNDABOUT, ARRIVE, MERGE, TOLL, BUSY, CAMERA, SCHOOL }
 
 private fun glyphOf(type: TurnType): Glyph {
     val name = type.name
@@ -494,6 +494,14 @@ internal fun DrawScope.glyph(g: Glyph, color: Color) {
             path { moveTo(10f * k, 38f * k); lineTo(10f * k, 14f * k) }
             path { moveTo(10f * k, 16f * k); lineTo(36f * k, 10f * k) }
             path { moveTo(34f * k, 38f * k); lineTo(34f * k, 26f * k) }
+        }
+        Glyph.CAMERA -> {
+            drawRoundRect(color, topLeft = Offset(7f * k, 14f * k), size = Size(22f * k, 16f * k), cornerRadius = CornerRadius(4f * k), style = stroke)
+            path { moveTo(29f * k, 20f * k); lineTo(37f * k, 15f * k); lineTo(37f * k, 29f * k); lineTo(29f * k, 24f * k) }
+        }
+        Glyph.SCHOOL -> {
+            path { moveTo(8f * k, 22f * k); lineTo(22f * k, 9f * k); lineTo(36f * k, 22f * k) }
+            path { moveTo(12f * k, 20f * k); lineTo(12f * k, 36f * k); lineTo(32f * k, 36f * k); lineTo(32f * k, 20f * k) }
         }
         // 차 세 대가 줄지어 선 모양
         Glyph.BUSY -> for (y in listOf(6f, 18f, 30f)) {

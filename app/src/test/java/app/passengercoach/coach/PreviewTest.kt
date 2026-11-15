@@ -44,6 +44,41 @@ class PreviewTest {
     }
 
     @Test
+    fun `회전 뒤 곧바로 다음 회전이 나오면 차로 잡는 법을 먼저 알려 준다`() {
+        val spots = listOf(Spot(100.0, SpotKind.LEFT, ""), Spot(280.0, SpotKind.RIGHT, ""), Spot(900.0, SpotKind.RIGHT, ""), Spot(1500.0, SpotKind.ARRIVE, ""))
+        val route = PreviewRoute(emptyList(), spots, 1500.0, 3)
+        val chained = Preview.tip(route, spots[0])
+        assertEquals("좌회전하고 180m 뒤에 바로 우회전이에요", chained.first)
+        assertTrue(chained.second.startsWith("돌자마자 오른쪽 차로로"))
+        // 다음 회전이 멀면 그 종류의 요령을, 같은 종류가 다시 나오면 다른 요령을 보여 준다
+        val first = Preview.tip(route, spots[1]).first
+        val second = Preview.tip(route, spots[2]).first
+        assertEquals("뒷바퀴는 앞바퀴보다 안쪽으로 돌아요", first)
+        assertEquals("우회전은 오른쪽 사이드미러부터 봐요", second)
+        // 모든 종류에 요령이 있다
+        SpotKind.entries.forEach { kind -> assertTrue(Preview.tip(route, Spot(5000.0, kind, "")).first.isNotBlank()) }
+    }
+
+    @Test
+    fun `길 위의 시설은 길에 가까운 것만 넣고 같은 종류는 띄엄띄엄 넣는다`() {
+        val start = LatLon(37.0, 127.0)
+        val points = listOf(start, RouteMath.offset(start, 0.0, 1000.0))
+        val route = PreviewRoute(points, listOf(Spot(1000.0, SpotKind.ARRIVE, "")), 1000.0, 2)
+        fun at(aheadM: Double, sideM: Double) = RouteMath.offset(RouteMath.offset(start, 0.0, aheadM), 90.0, sideM)
+        val marks = listOf(
+            Mark(at(400.0, 3.0), MarkKind.BUMP),
+            Mark(at(500.0, 3.0), MarkKind.BUMP),      // 앞의 것과 300m 안이라 뺀다
+            Mark(at(600.0, 60.0), MarkKind.CAMERA),   // 길에서 멀어 뺀다
+            Mark(at(800.0, 100.0), MarkKind.SCHOOL),  // 학교는 120m까지 넣는다
+            Mark(at(200.0, 2.0), MarkKind.SIGNAL),    // 신호등은 지도에만 그린다
+        )
+        val spots = Preview.withMarks(route, marks).spots
+        assertEquals(listOf(SpotKind.BUMP, SpotKind.SCHOOL, SpotKind.ARRIVE), spots.map { it.kind })
+        assertEquals(400.0, spots[0].atM, 1.0)
+        assertEquals(800.0, spots[1].atM, 1.0)
+    }
+
+    @Test
     fun `왼쪽으로 꺾이는 곳에서는 왼쪽 깜빡이와 왼쪽 핸들을 예상한다`() {
         // 북쪽으로 200m 간 뒤 서쪽(왼쪽)으로 200m
         val start = LatLon(37.0, 127.0)

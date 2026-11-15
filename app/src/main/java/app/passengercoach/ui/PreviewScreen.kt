@@ -47,6 +47,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.passengercoach.coach.LatLon
+import app.passengercoach.coach.MapData
 import app.passengercoach.coach.Preview
 import app.passengercoach.coach.PreviewRoute
 import app.passengercoach.coach.Road
@@ -69,10 +70,11 @@ import kotlin.math.abs
  * 목적지가 없거나 길을 받지 못하면 앱에 넣어 둔 연습 코스(시험 자료)를 보여 준다.
  */
 @Composable
-internal fun PreviewScreen(here: LatLon?, dest: LatLon?, routes: RouteHub, roads: RoadHub, sampleRoads: List<Road>, onClose: () -> Unit) {
+internal fun PreviewScreen(here: LatLon?, dest: LatLon?, routes: RouteHub, roads: RoadHub, onClose: () -> Unit) {
     val c = if (isSystemInDarkTheme()) Night else Day
+    val context = androidx.compose.ui.platform.LocalContext.current
     var plan by remember { mutableStateOf<PreviewRoute?>(null) }
-    var roadList by remember { mutableStateOf(emptyList<Road>()) }
+    var map by remember { mutableStateOf<MapData?>(null) }
     var why by remember { mutableStateOf<String?>(null) }
     var atM by remember { mutableDoubleStateOf(0.0) }
     var playing by remember { mutableStateOf(true) }
@@ -82,7 +84,11 @@ internal fun PreviewScreen(here: LatLon?, dest: LatLon?, routes: RouteHub, roads
         val fetched = if (routes.hasKey && here != null && dest != null) {
             withContext(Dispatchers.IO) { runCatching { routes.preview(here, dest) }.onFailure { dlog("Preview") { "PREVIEW_FAILED ${it.message}" } }.getOrNull() }
         } else null
-        val p = fetched?.takeIf { it.points.size >= 2 } ?: Preview.fromShape(DemoRoute.points)
+        fun asset(name: String) = context.assets.open(name).bufferedReader().use { it.readText() }
+        // 길을 받지 못하면 앱에 넣어 둔 연습 코스(약 5km, 시험 자료)를 쓴다. 인증키가 없는 제출용 빌드는 항상 이쪽이다
+        val p = fetched?.takeIf { it.points.size >= 2 }
+            ?: withContext(Dispatchers.IO) { runCatching { RouteHub.parseSample(asset("preview_sample.json")) }.getOrNull() }
+            ?: Preview.fromShape(DemoRoute.points)
         why = when {
             !p.sample || !routes.hasKey -> null
             dest == null -> "내비에 목적지를 정하면 그 길을 보여 줘요"
@@ -90,16 +96,32 @@ internal fun PreviewScreen(here: LatLon?, dest: LatLon?, routes: RouteHub, roads
         }
         plan = p
         dlog("Preview") { "PREVIEW sample=${p.sample} lengthM=${p.lengthM.toInt()} spots=${p.spots.map { it.kind }}" }
-        roadList = if (p.sample) sampleRoads else withContext(Dispatchers.IO) { runCatching { roads.corridor(p.points) }.getOrDefault(emptyList()) }
-        dlog("Preview") { "PREVIEW_ROADS ${roadList.size}" }
+        // 주변 지형(건물, 녹지, 물, 이름, 길 위의 시설)은 조금 늦게 와도 된다. 먼저 길만으로 시작한다
+        val m = withContext(Dispatchers.IO) {
+            runCatching { if (p.sample) RoadHub.parseMap(asset("preview_map.json")) else roads.corridor(p.points) }
+                .onFailure { dlog("Preview") { "PREVIEW_MAP_FAILED ${it.message}" } }.getOrNull()
+        } ?: return@LaunchedEffect
+        map = m
+        plan = Preview.withMarks(p, m.marks)
+        dlog("Preview") { "PREVIEW_MAP roads=${m.roads.size} areas=${m.areas.size} labels=${m.labels.size} marks=${m.marks.size} spots=${plan?.spots?.size}" }
     }
     LaunchedEffect(Unit) {
+        var frames = 0
+        var since = System.currentTimeMillis()
         while (true) {
             delay(TICK_MS)
-            now = System.currentTimeMillis()
+            // 화면을 그리는 데 시간이 걸려도 속도가 느려지지 않게, 실제로 지난 시간만큼 나아간다
+            val t = System.currentTimeMillis()
+            val passed = (t - now).coerceIn(0L, 250L)
+            now = t
+            if (++frames == 100) {
+                dlog("Preview") { "PREVIEW_FPS ${100_000 / (t - since).coerceAtLeast(1)}" }
+                frames = 0
+                since = t
+            }
             val p = plan ?: continue
             if (playing) {
-                atM += Preview.speed(atM, p.spots) * TICK_MS / 1000.0
+                atM += Preview.speed(atM, p.spots) * passed / 1000.0
                 if (atM >= p.lengthM) {
                     atM = p.lengthM
                     playing = false
@@ -121,15 +143,20 @@ internal fun PreviewScreen(here: LatLon?, dest: LatLon?, routes: RouteHub, roads
                 val car = RouteMath.along(p.points, atM).first
                 // 꺾이는 곳에서 지도가 한 번에 돌지 않게, 조금 뒤와 조금 앞을 이은 방향을 쓴다
                 val heading = RouteMath.bearing(RouteMath.along(p.points, atM - 10.0).first, RouteMath.along(p.points, atM + 20.0).first)
-                MapPanel(car.lat, car.lon, heading, roadList, p.points, c, Modifier.fillMaxSize())
+                MapPanel(car.lat, car.lon, heading, emptyList(), p.points, c, Modifier.fillMaxSize(), map = map ?: MapData())
                 Box(Modifier.fillMaxWidth().height(64.dp).background(Brush.verticalGradient(listOf(c.bg.copy(alpha = 0.75f), Color.Transparent))))
-                Text("© OpenStreetMap contributors", fontSize = 10.sp, color = c.muted, modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 4.dp))
+                Text("© OpenStreetMap contributors", fontSize = 10.sp, color = c.muted, modifier = Modifier.align(Alignment.BottomEnd).padding(end = 12.dp, bottom = 4.dp))
 
-                (current ?: next)?.let { SpotChip(it, atM, c, Modifier.align(Alignment.TopStart).padding(14.dp)) }
-                Column(Modifier.align(Alignment.TopEnd).padding(14.dp), horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Pill("미리 가 보기 · ${distanceText(p.lengthM)} · ${p.minutes}분", c.card, c.text)
-                    if (p.sample) Pill("연습 코스(시험 자료)", c.ask, c.askText)
+                // 무엇이 나오는지와 그곳의 요령을 지도 위 한 칸에 모은다(눈이 지도와 이 칸만 오가면 되게)
+                val spot = current ?: next
+                val tip = current?.let { Preview.tip(p, it) } ?: if (done) "도착했어요. 짚어 본 곳은 ${p.spots.size}곳이에요" to "" else null
+                if (spot != null || tip != null) SpotBanner(spot, atM, tip, c, Modifier.align(Alignment.TopStart).padding(12.dp))
+                Column(Modifier.align(Alignment.BottomStart).padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     why?.let { Pill(it, c.card, c.muted) }
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Pill("${distanceText(p.lengthM)} · ${p.minutes}분", c.card, c.text)
+                        if (p.sample) Pill("연습 코스(시험 자료)", c.ask, c.askText)
+                    }
                 }
                 if (current?.kind == SpotKind.BUSY) {
                     Canvas(
@@ -172,19 +199,8 @@ internal fun PreviewScreen(here: LatLon?, dest: LatLon?, routes: RouteHub, roads
                     ) { timeline(p, atM, current, c) }
                 }
             }
-        }
-
-        Row(Modifier.fillMaxWidth().height(64.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Column(Modifier.weight(1f).fillMaxHeight().background(c.bar, RoundedCornerShape(20.dp)).padding(horizontal = 18.dp), verticalArrangement = Arrangement.Center) {
-                val tip = current?.let { Preview.tip(it.kind) }
-                val main = when {
-                    tip != null -> tip.first
-                    done -> "도착했어요. 짚어 본 곳은 ${p?.spots?.size ?: 0}곳이에요"
-                    else -> "오늘 갈 길을 미리 따라가 봐요"
-                }
-                Text(main, fontSize = 19.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis, color = if (tip != null || done) c.barText else c.barMuted)
-                tip?.let { Text(it.second, fontSize = 13.sp, color = c.barMuted, maxLines = 1, overflow = TextOverflow.Ellipsis) }
-            }
+            // 멈춤과 닫기는 오른쪽 끝에 세로로 둔다(아래 줄을 없애 지도를 키웠다)
+            Column(Modifier.fillMaxHeight(), verticalArrangement = Arrangement.SpaceBetween) {
             Box(
                 Modifier.size(64.dp).background(c.accent, RoundedCornerShape(22.dp)).semantics { contentDescription = if (done) "처음부터 다시" else if (playing) "멈춤" else "계속" }
                     .clickable(role = Role.Button) {
@@ -211,6 +227,7 @@ internal fun PreviewScreen(here: LatLon?, dest: LatLon?, routes: RouteHub, roads
                     drawLine(c.text, Offset(size.width, 0f), Offset(0f, size.height), strokeWidth = 5f, cap = StrokeCap.Round)
                 }
             }
+            }
         }
     }
 }
@@ -227,22 +244,37 @@ private fun glyphOf(kind: SpotKind): Glyph = when (kind) {
     SpotKind.HIGHWAY -> Glyph.MERGE
     SpotKind.TOLL -> Glyph.TOLL
     SpotKind.BUSY -> Glyph.BUSY
+    SpotKind.BUMP -> Glyph.OVER
+    SpotKind.CAMERA -> Glyph.CAMERA
+    SpotKind.SCHOOL -> Glyph.SCHOOL
     SpotKind.ARRIVE -> Glyph.ARRIVE
 }
 
-/** 다음에(또는 지금) 짚어 줄 곳: 그림, 남은 거리, 이름 */
+/**
+ * 지도 위의 안내 칸: 다음에(또는 지금) 짚어 줄 곳의 그림, 남은 거리, 이름. 그곳에 다가가면 같은 칸이 넓어지며 요령이 붙는다.
+ * 요령을 화면 맨 아래에 따로 두면 눈이 지도와 아래를 오가야 해서, 한 칸에 모았다.
+ */
 @Composable
-private fun SpotChip(spot: Spot, atM: Double, c: CockpitColors, modifier: Modifier) {
-    val left = spot.atM - atM
+private fun SpotBanner(spot: Spot?, atM: Double, tip: Pair<String, String>?, c: CockpitColors, modifier: Modifier) {
     Row(
-        modifier.widthIn(max = 360.dp).background(c.chip, RoundedCornerShape(20.dp)).padding(start = 12.dp, end = 18.dp, top = 10.dp, bottom = 10.dp),
+        modifier.widthIn(max = if (tip == null) 360.dp else 600.dp).background(c.chip, RoundedCornerShape(20.dp)).padding(start = 12.dp, end = 18.dp, top = 10.dp, bottom = 10.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically,
     ) {
-        Canvas(Modifier.size(44.dp)) { glyph(glyphOf(spot.kind), c.chipText) }
-        Column {
-            Text(if (left > 5) distanceText(left) else "여기", fontSize = 30.sp, fontWeight = FontWeight.Black, color = c.chipText)
-            val title = Preview.title(spot.kind)
-            Text(if (spot.name.isBlank() || spot.name == title) title else "$title · ${spot.name}", fontSize = 14.sp, fontWeight = FontWeight.Medium, color = c.chipMuted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        if (spot != null) {
+            val left = spot.atM - atM
+            Canvas(Modifier.size(44.dp)) { glyph(glyphOf(spot.kind), c.chipText) }
+            Column {
+                Text(if (left > 5) distanceText(left) else "여기", fontSize = 28.sp, fontWeight = FontWeight.Black, color = c.chipText, maxLines = 1)
+                val title = Preview.title(spot.kind)
+                Text(if (spot.name.isBlank() || spot.name == title) title else "$title · ${spot.name}", fontSize = 13.sp, fontWeight = FontWeight.Medium, color = c.chipMuted, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 150.dp))
+            }
+        }
+        if (tip != null) {
+            if (spot != null) Box(Modifier.size(1.dp, 44.dp).background(c.chipMuted.copy(alpha = 0.4f)))
+            Column(Modifier.weight(1f, fill = false), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(tip.first, fontSize = 17.sp, fontWeight = FontWeight.Bold, color = c.chipText, maxLines = 2, lineHeight = 21.sp)
+                if (tip.second.isNotEmpty()) Text(tip.second, fontSize = 13.sp, color = c.chipMuted, maxLines = 2, lineHeight = 17.sp)
+            }
         }
     }
 }

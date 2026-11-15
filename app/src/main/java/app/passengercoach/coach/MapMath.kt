@@ -6,6 +6,31 @@ import kotlin.math.sin
 /** 지도에 그릴 길 한 줄. [level]: 0 = 큰길, 1 = 중간 길, 2 = 동네 길, 3 = 진입로 같은 작은 길 */
 data class Road(val points: List<LatLon>, val level: Int)
 
+/** 지도에 칠할 넓은 곳 */
+enum class AreaKind { BUILDING, GREEN, WATER }
+
+data class Area(val points: List<LatLon>, val kind: AreaKind) {
+    /** 멀리 있는 것을 빨리 걸러 내려고 가운데 점을 미리 구해 둔다 */
+    val center: LatLon = LatLon(points.sumOf { it.lat } / points.size, points.sumOf { it.lon } / points.size)
+}
+
+/** 지도에 쓸 이름. [road]면 길 이름, 아니면 건물이나 장소 이름 */
+data class MapLabel(val at: LatLon, val text: String, val road: Boolean)
+
+/** 길 위의 시설: 신호등, 단속 카메라, 과속방지턱, 학교 */
+enum class MarkKind { SIGNAL, CAMERA, BUMP, SCHOOL }
+
+data class Mark(val at: LatLon, val kind: MarkKind)
+
+/** 경로 주변의 지도 자료(OpenStreetMap) */
+data class MapData(
+    val roads: List<Road> = emptyList(),
+    val areas: List<Area> = emptyList(),
+    val waters: List<List<LatLon>> = emptyList(),
+    val labels: List<MapLabel> = emptyList(),
+    val marks: List<Mark> = emptyList(),
+)
+
 /**
  * 앱이 직접 그리는 지도의 좌표 계산. 진행 방향이 위로 가고, 앞유리 너머로 보듯 먼 곳이 작아진다.
  * Android에 의존하지 않아 단위 테스트가 가능하다.
