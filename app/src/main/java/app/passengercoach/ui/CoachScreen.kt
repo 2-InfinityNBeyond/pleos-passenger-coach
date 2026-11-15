@@ -58,6 +58,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.passengercoach.coach.CoachEngine
 import app.passengercoach.coach.CoachTopic
+import app.passengercoach.coach.LatLon
 import app.passengercoach.coach.Record
 import app.passengercoach.coach.Recap
 import app.passengercoach.coach.RecordStore
@@ -137,7 +138,7 @@ private const val CONNECTING_MS = 3_000L
 /** 줄 세워 둔 해설을 이어서 말할 때 두는 틈(앞 문장을 읽을 시간) */
 private const val EXTRA_GAP_MS = 1_200L
 
-private enum class Page { MAIN, SETTINGS, RECORDS, ASKS }
+private enum class Page { MAIN, SETTINGS, RECORDS, ASKS, PREVIEW }
 
 /** 연습 상황: 고른 상황의 해설만 보여 준다. 주행 전에 고르고, 주행 중에는 입력을 요구하지 않는다 */
 private enum class Topic(val label: String, val filter: CoachTopic?) {
@@ -181,7 +182,7 @@ private fun ConsentScreen(onAgree: () -> Unit) {
         // 한 화면에 들어오도록 네 줄로 줄였다. 빠진 내용은 없다(보여 주는 것, 내보내는 것, 저장과 철회, 책임)
         listOf(
             "운전자의 조작(핸들, 브레이크, 깜빡이, 기어)과 내비 안내를 이 화면에 보여 줘요. 차를 제어하지 않아요.",
-            "조작 데이터는 기기 밖으로 보내지 않아요. 지도와 길을 그리려고 현재 위치와 목적지만 보내요.",
+            "조작 데이터는 기기 밖으로 보내지 않아요. 지도와 길을 그리려고 현재 위치, 목적지와 그 사이 경로만 보내요.",
             "학습 기록은 켠 경우에만 이 기기에 저장해요. 동의는 설정에서 언제든 철회할 수 있어요.",
             "배움을 돕는 도구예요. 운전의 책임은 운전자에게 있어요.",
         ).forEach { Text("• $it", fontSize = 18.sp) }
@@ -324,6 +325,15 @@ private fun CoachApp(hub: SignalHub, navi: NaviHub, lights: TrafficLightHub, rou
         )
         Page.RECORDS -> RecordsScreen(records, "학습 기록", "기록이 없어요. 설정에서 학습 기록을 켜면 해설이 여기에 쌓여요.", onBack = { page = Page.SETTINGS })
         Page.ASKS -> RecordsScreen(asks, "물어볼 것", "아직 없어요. 주행 화면의 ? 버튼을 누르면 그 순간이 여기에 남아요.", onBack = { page = Page.SETTINGS }, onCleared = { asked = 0 })
+        Page.PREVIEW -> {
+            // 실제 내비의 현재 위치와 목적지로 길을 받는다(데모 중이어도 데모 값은 쓰지 않는다)
+            val real = remember { navi.state.value }
+            PreviewScreen(
+                here = real.lat?.let { lat -> real.lon?.let { LatLon(lat, it) } },
+                dest = real.destLat?.let { lat -> real.destLon?.let { LatLon(lat, it) } },
+                routes = routes, roads = roads, sampleRoads = demoRoads, onClose = { page = Page.MAIN },
+            )
+        }
         Page.MAIN -> {
             // 오래된 해설을 지금 일처럼 보이지 않게: 잠시 뒤 흐리게, 더 지나면 지운다
             val shownMessage = message.takeIf { now - messageAtMs < MESSAGE_CLEAR_MS }
@@ -355,7 +365,7 @@ private fun CoachApp(hub: SignalHub, navi: NaviHub, lights: TrafficLightHub, rou
                 CockpitScreen(
                     s = signals, n = naviSnapshot, light = light, roads = roadList, route = route, message = shownMessage, why = shownWhy, messageOld = messageOld,
                     recap = shownRecap, tip = shownTip, still = still, demoOn = demoOn, now = now, asked = asked,
-                    onRetry = onRetry, onDemoTap = onDemoTap, onSettings = { page = Page.SETTINGS },
+                    onRetry = onRetry, onDemoTap = onDemoTap, onSettings = { page = Page.SETTINGS }, onPreview = { page = Page.PREVIEW },
                     onAsk = {
                         // 그 순간에 보이던 해설을 남긴다. 해설이 없으면 시각만 남는다
                         val at = System.currentTimeMillis()

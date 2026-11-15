@@ -73,7 +73,7 @@ internal data class CockpitColors(
     val ask: Color, val askText: Color, val mapBase: Color,
 )
 
-private val Day = CockpitColors(
+internal val Day = CockpitColors(
     bg = Color(0xFFF3F2F8), card = Color(0xFFFFFFFF), text = Color(0xFF17162B), muted = Color(0xFF5F5E76),
     accent = Color(0xFF5B4BFF), onAccent = Color(0xFFFFFFFF),
     bar = Color(0xFF17162B), barText = Color(0xFFFFFFFF), barMuted = Color(0xFFC9C6F5),
@@ -83,7 +83,7 @@ private val Day = CockpitColors(
     ask = Color(0xFFFFD84D), askText = Color(0xFF17162B), mapBase = Color(0xFFE4E6F1),
 )
 
-private val Night = CockpitColors(
+internal val Night = CockpitColors(
     bg = Color(0xFF0C0C14), card = Color(0xFF191927), text = Color(0xFFF1F0FA), muted = Color(0xFFA9A8C2),
     accent = Color(0xFF8F86FF), onAccent = Color(0xFF0C0C14),
     bar = Color(0xFF222233), barText = Color(0xFFF1F0FA), barMuted = Color(0xFFA9A8C2),
@@ -117,6 +117,7 @@ internal fun CockpitScreen(
     onDemoTap: () -> Unit,
     onSettings: () -> Unit,
     onAsk: () -> Unit,
+    onPreview: () -> Unit,
 ) {
     val dark = isSystemInDarkTheme()
     val c = if (dark) Night else Day
@@ -266,6 +267,13 @@ internal fun CockpitScreen(
                     }
                 }
             }
+            // 미리 가 보기: 출발하기 전에 오늘 갈 길을 따라가 본다
+            Box(
+                Modifier.size(64.dp).background(c.accent, RoundedCornerShape(22.dp)).clickable(role = Role.Button, onClick = onPreview).semantics { contentDescription = "미리 가 보기" },
+                contentAlignment = Alignment.Center,
+            ) {
+                Canvas(Modifier.size(34.dp)) { previewGlyph(c.onAccent) }
+            }
             Box(
                 Modifier.size(64.dp).background(c.card, RoundedCornerShape(22.dp)).clickable(role = Role.Button, onClick = onSettings).semantics { contentDescription = "설정" },
                 contentAlignment = Alignment.Center,
@@ -278,7 +286,7 @@ internal fun CockpitScreen(
 }
 
 @Composable
-private fun Pill(text: String, bg: Color, fg: Color, modifier: Modifier = Modifier, big: Boolean = false) {
+internal fun Pill(text: String, bg: Color, fg: Color, modifier: Modifier = Modifier, big: Boolean = false) {
     Text(
         text, fontSize = if (big) 20.sp else 14.sp, fontWeight = FontWeight.Bold, color = fg, maxLines = 1,
         modifier = modifier.background(bg, RoundedCornerShape(999.dp)).padding(horizontal = if (big) 22.dp else 12.dp, vertical = if (big) 10.dp else 6.dp),
@@ -345,7 +353,7 @@ private fun SpeedSign(limit: Int, c: CockpitColors) {
 }
 
 @Composable
-private fun Blinker(left: Boolean, on: Boolean, lit: Boolean, c: CockpitColors) {
+internal fun Blinker(left: Boolean, on: Boolean, lit: Boolean, c: CockpitColors) {
     val bright = on && lit
     Canvas(Modifier.size(54.dp).semantics { contentDescription = (if (left) "왼쪽" else "오른쪽") + " 방향지시등 " + if (on) "켜짐" else "꺼짐" }) {
         drawCircle(if (on) c.greenBg else c.off)
@@ -362,7 +370,7 @@ private fun Blinker(left: Boolean, on: Boolean, lit: Boolean, c: CockpitColors) 
 
 /** 핸들. SDK 값은 양수 = 왼쪽(반시계)이고 화면 회전은 시계 방향이 양수라서 부호를 뒤집는다 */
 @Composable
-private fun CockpitWheel(angle: Float?, wheelSize: Dp, color: Color, accent: Color) {
+internal fun CockpitWheel(angle: Float?, wheelSize: Dp, color: Color, accent: Color) {
     Canvas(Modifier.size(wheelSize).semantics { contentDescription = "핸들 " + angleLabel(angle) }) {
         val k = size.minDimension / 132f
         rotate(-(angle ?: 0f)) {
@@ -403,6 +411,18 @@ private fun DrawScope.brakePedal(on: Boolean, c: CockpitColors) {
     }
 }
 
+/** 출발점에서 굽은 길을 따라 목적지 핀까지 */
+internal fun DrawScope.previewGlyph(color: Color) {
+    val k = size.minDimension / 34f
+    drawCircle(color, radius = 4f * k, center = Offset(7f * k, 27f * k))
+    drawPath(
+        Path().apply { moveTo(7f * k, 27f * k); cubicTo(24f * k, 27f * k, 4f * k, 14f * k, 19f * k, 14f * k) },
+        color, style = Stroke(width = 3.5f * k, cap = StrokeCap.Round),
+    )
+    drawCircle(color, radius = 5.5f * k, center = Offset(26f * k, 10f * k), style = Stroke(width = 3.5f * k))
+    drawLine(color, Offset(26f * k, 16f * k), Offset(26f * k, 21f * k), strokeWidth = 3.5f * k, cap = StrokeCap.Round)
+}
+
 private fun DrawScope.slidersGlyph(color: Color) {
     val w = size.width
     for ((i, knob) in listOf(0.3f, 0.7f, 0.45f).withIndex()) {
@@ -412,7 +432,7 @@ private fun DrawScope.slidersGlyph(color: Color) {
     }
 }
 
-private enum class Glyph { LEFT, RIGHT, STRAIGHT, UTURN, OVER, UNDER, ROUNDABOUT, ARRIVE }
+internal enum class Glyph { LEFT, RIGHT, STRAIGHT, UTURN, OVER, UNDER, ROUNDABOUT, ARRIVE, MERGE, TOLL, BUSY }
 
 private fun glyphOf(type: TurnType): Glyph {
     val name = type.name
@@ -429,11 +449,13 @@ private fun glyphOf(type: TurnType): Glyph {
 }
 
 /** 안내 화살표. 44 기준 좌표로 그리고 칸 크기에 맞춰 키운다 */
-private fun DrawScope.turnGlyph(type: TurnType, color: Color) {
+private fun DrawScope.turnGlyph(type: TurnType, color: Color) = glyph(glyphOf(type), color)
+
+internal fun DrawScope.glyph(g: Glyph, color: Color) {
     val k = size.minDimension / 44f
     val stroke = Stroke(width = 5f * k, cap = StrokeCap.Round, join = StrokeJoin.Round)
     fun path(build: Path.() -> Unit) = drawPath(Path().apply(build), color, style = stroke)
-    when (val g = glyphOf(type)) {
+    when (g) {
         Glyph.LEFT, Glyph.RIGHT -> scale(scaleX = if (g == Glyph.RIGHT) 1f else -1f, scaleY = 1f) {
             path { moveTo(14f * k, 36f * k); lineTo(14f * k, 22f * k); quadraticBezierTo(14f * k, 16f * k, 20f * k, 16f * k); lineTo(32f * k, 16f * k) }
             path { moveTo(26f * k, 9f * k); lineTo(33f * k, 16f * k); lineTo(26f * k, 23f * k) }
@@ -462,6 +484,20 @@ private fun DrawScope.turnGlyph(type: TurnType, color: Color) {
             drawCircle(color, radius = 11f * k, center = Offset(22f * k, 20f * k), style = stroke)
             drawCircle(color, radius = 4f * k, center = Offset(22f * k, 20f * k))
             path { moveTo(22f * k, 31f * k); lineTo(22f * k, 38f * k) }
+        }
+        Glyph.MERGE -> {
+            path { moveTo(26f * k, 38f * k); lineTo(26f * k, 8f * k) }
+            path { moveTo(10f * k, 38f * k); quadraticBezierTo(10f * k, 24f * k, 26f * k, 18f * k) }
+            path { moveTo(19f * k, 14f * k); lineTo(26f * k, 7f * k); lineTo(33f * k, 14f * k) }
+        }
+        Glyph.TOLL -> {
+            path { moveTo(10f * k, 38f * k); lineTo(10f * k, 14f * k) }
+            path { moveTo(10f * k, 16f * k); lineTo(36f * k, 10f * k) }
+            path { moveTo(34f * k, 38f * k); lineTo(34f * k, 26f * k) }
+        }
+        // 차 세 대가 줄지어 선 모양
+        Glyph.BUSY -> for (y in listOf(6f, 18f, 30f)) {
+            drawRoundRect(color, topLeft = Offset(15f * k, y * k), size = Size(14f * k, 9f * k), cornerRadius = CornerRadius(3f * k))
         }
     }
 }

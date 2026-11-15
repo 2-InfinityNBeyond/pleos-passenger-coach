@@ -121,7 +121,7 @@ class MainActivity : ComponentActivity() {
 
     private companion object {
         const val PREFS = "coach"
-        const val KEY_CONSENT = "consent_v5"
+        const val KEY_CONSENT = "consent_v6"
         const val ACTION_LOCATION = "app.passengercoach.DEBUG_LOCATION"
     }
 }

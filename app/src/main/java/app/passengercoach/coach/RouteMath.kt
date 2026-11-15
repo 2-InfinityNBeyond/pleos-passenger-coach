@@ -45,6 +45,29 @@ object RouteMath {
         }.min()
     }
 
+    /**
+     * [p]에서 가장 가까운 경로 위 지점까지, 출발점부터 경로를 따라 잰 거리(미터).
+     * shortcut: 같은 곳을 두 번 지나는 경로에서는 먼저 지나는 쪽을 고른다
+     */
+    fun alongOf(route: List<LatLon>, p: LatLon): Double {
+        var best = Double.MAX_VALUE
+        var bestAt = 0.0
+        var walked = 0.0
+        for ((a, b) in route.zipWithNext()) {
+            val (bx, by) = xy(a, b)
+            val (px, py) = xy(a, p)
+            val len = hypot(bx, by)
+            val t = if (len == 0.0) 0.0 else ((px * bx + py * by) / (len * len)).coerceIn(0.0, 1.0)
+            val d = hypot(px - bx * t, py - by * t)
+            if (d < best) {
+                best = d
+                bestAt = walked + len * t
+            }
+            walked += len
+        }
+        return bestAt
+    }
+
     /** 경로를 따라 [meters]만큼 간 지점과 그때의 진행 방위. 끝을 넘으면 끝 점 */
     fun along(route: List<LatLon>, meters: Double): Pair<LatLon, Double> {
         var left = meters.coerceAtLeast(0.0)

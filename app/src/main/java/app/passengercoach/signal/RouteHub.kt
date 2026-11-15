@@ -2,6 +2,8 @@ package app.passengercoach.signal
 
 import android.util.Log
 import app.passengercoach.coach.LatLon
+import app.passengercoach.coach.Preview
+import app.passengercoach.coach.PreviewRoute
 import app.passengercoach.coach.RouteMath
 import app.passengercoach.dlog
 import kotlinx.coroutines.CoroutineScope
@@ -90,7 +92,14 @@ class RouteHub(private val apiKey: String) {
         dlog(TAG) { "ROUTE points=${line.size} offBefore=${off?.toInt()}" }
     }
 
-    private fun fetch(from: LatLon, to: LatLon): List<LatLon> {
+    val hasKey: Boolean get() = apiKey.isNotBlank()
+
+    /** 미리 가 보기용: 경로 선과 함께 안내 지점, 구간별 혼잡도까지 받는다. 부르는 쪽에서 IO 스레드로 부른다 */
+    fun preview(from: LatLon, to: LatLon): PreviewRoute = parse(download(from, to))
+
+    private fun fetch(from: LatLon, to: LatLon): List<LatLon> = parse(download(from, to)).points
+
+    private fun download(from: LatLon, to: LatLon): String {
         val url = "$BASE?origin=${from.lon},${from.lat}&destination=${to.lon},${to.lat}&priority=RECOMMEND"
         val c = URL(url).openConnection() as HttpURLConnection
         c.connectTimeout = 10_000
@@ -101,34 +110,54 @@ class RouteHub(private val apiKey: String) {
                 dlog(TAG) { "ROUTE_HTTP ${c.responseCode} from=${from.lat},${from.lon} to=${to.lat},${to.lon} body=${c.errorStream?.bufferedReader()?.use { it.readText() }?.take(200)}" }
                 throw IllegalStateException("HTTP ${c.responseCode}")
             }
-            val body = c.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
-            val route = JSONObject(body).getJSONArray("routes").getJSONObject(0)
-            if (route.optInt("result_code", -1) != 0) throw IllegalStateException("result ${route.optInt("result_code")}")
-            val line = ArrayList<LatLon>()
-            val sections = route.getJSONArray("sections")
-            for (s in 0 until sections.length()) {
-                val roads = sections.getJSONObject(s).getJSONArray("roads")
-                for (r in 0 until roads.length()) {
-                    // vertexes: 경도, 위도가 번갈아 들어 있다
-                    val v = roads.getJSONObject(r).getJSONArray("vertexes")
-                    var i = 0
-                    while (i + 1 < v.length()) {
-                        line += LatLon(v.getDouble(i + 1), v.getDouble(i))
-                        i += 2
-                    }
-                }
-            }
-            return line
+            return c.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
         } finally {
             c.disconnect()
         }
     }
 
-    private companion object {
-        const val TAG = "RouteLab"
-        const val BASE = "https://apis-navi.kakaomobility.com/v1/directions"
-        const val OFF_ROUTE_M = 50.0
-        const val CHECK_MS = 2_000L
-        const val MIN_GAP_MS = 6_000L
+    companion object {
+        /** 길찾기 응답을 경로 선, 짚어 줄 곳, 길이, 걸리는 시간으로 바꾼다 */
+        fun parse(body: String): PreviewRoute {
+            val route = JSONObject(body).getJSONArray("routes").getJSONObject(0)
+            if (route.optInt("result_code", -1) != 0) throw IllegalStateException("result ${route.optInt("result_code")}")
+            val line = ArrayList<LatLon>()
+            val spots = ArrayList<Triple<LatLon, Int, String>>()
+            val busy = ArrayList<Triple<Double, Double, Int>>()
+            var roadAt = 0.0
+            val sections = route.getJSONArray("sections")
+            for (s in 0 until sections.length()) {
+                val section = sections.getJSONObject(s)
+                val roads = section.getJSONArray("roads")
+                for (r in 0 until roads.length()) {
+                    val road = roads.getJSONObject(r)
+                    // vertexes: 경도, 위도가 번갈아 들어 있다
+                    val v = road.getJSONArray("vertexes")
+                    var i = 0
+                    while (i + 1 < v.length()) {
+                        line += LatLon(v.getDouble(i + 1), v.getDouble(i))
+                        i += 2
+                    }
+                    val d = road.optDouble("distance", 0.0)
+                    busy += Triple(roadAt, roadAt + d, road.optInt("traffic_state", 0))
+                    roadAt += d
+                }
+                val g = section.optJSONArray("guides") ?: continue
+                for (i in 0 until g.length()) {
+                    val guide = g.getJSONObject(i)
+                    spots += Triple(LatLon(guide.optDouble("y", 0.0), guide.optDouble("x", 0.0)), guide.optInt("type", 0), guide.optString("name"))
+                }
+            }
+            // 안내 지점의 좌표를 경로 선 위의 거리로 바꾼다(안내에 적힌 거리를 더하는 것보다 꺾이는 곳에 정확히 맞는다)
+            val guides = spots.map { Triple(RouteMath.alongOf(line, it.first), it.second, it.third) }
+            val minutes = (route.optJSONObject("summary")?.optInt("duration", 0) ?: 0) / 60
+            return PreviewRoute(line, Preview.spots(guides, busy), RouteMath.lengthM(line), minutes)
+        }
+
+        private const val TAG = "RouteLab"
+        private const val BASE = "https://apis-navi.kakaomobility.com/v1/directions"
+        private const val OFF_ROUTE_M = 50.0
+        private const val CHECK_MS = 2_000L
+        private const val MIN_GAP_MS = 6_000L
     }
 }
