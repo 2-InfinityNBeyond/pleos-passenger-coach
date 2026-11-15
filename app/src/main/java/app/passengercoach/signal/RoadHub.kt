@@ -94,7 +94,7 @@ class RoadHub(private val cacheDir: File) {
         // 길을 먼저 보여 준 뒤, 건물·녹지·물·이름까지 든 자료를 이어서 받는다(공용 서버라 수십 초 걸릴 수 있다)
         // shortcut: 실패하면 그 자리에서는 다시 시도하지 않는다(길만 보인다), 출시 때 지도 자료 서비스로 교체
         runCatching {
-            val terrain = File(cacheDir, "terrain_${lat}_$lon.json")
+            val terrain = File(cacheDir, "terrain2_${lat}_$lon.json")
             val body = if (terrain.exists()) terrain.readText() else post(mapQuery("$lat,$lon", TERRAIN_RADIUS_M, TERRAIN_RADIUS_M)).also { runCatching { terrain.writeText(it) } }
             mutableMap.value = parseMap(body)
             dlog(TAG) { "TERRAIN areas=${mutableMap.value?.areas?.size} labels=${mutableMap.value?.labels?.size}" }
@@ -111,7 +111,7 @@ class RoadHub(private val cacheDir: File) {
         val step = maxOf(1, route.size / CORRIDOR_POINTS)
         val line = route.filterIndexed { i, _ -> i % step == 0 || i == route.lastIndex }
             .map { "${(it.lat * 1000).roundToInt() / 1000.0},${(it.lon * 1000).roundToInt() / 1000.0}" }.distinct()
-        val cache = File(cacheDir, "map_${line.joinToString("").hashCode()}.json")
+        val cache = File(cacheDir, "map2_${line.joinToString("").hashCode()}.json")
         if (cache.exists()) return parseMap(cache.readText())
         val query = mapQuery(line.joinToString(","), CORRIDOR_RADIUS_M, 40)
         // 서버마다 한 번씩 시도한다(실패하면 post가 다음 서버로 넘긴다)
@@ -139,6 +139,12 @@ class RoadHub(private val cacheDir: File) {
         "way(around:${radius + 50},$where)[\"waterway\"~\"^(river|stream|canal)$\"];" +
         "node(around:$markRadius,$where)[\"highway\"~\"^(traffic_signals|speed_camera)$\"];" +
         "node(around:$markRadius,$where)[\"traffic_calming\"];" +
+        "node(around:$markRadius,$where)[\"highway\"=\"crossing\"];" +
+        "way(around:$radius,$where)[\"highway\"~\"^(footway|pedestrian|path|cycleway)$\"];" +
+        "way(around:$radius,$where)[\"amenity\"=\"parking\"];" +
+        "way(around:$radius,$where)[\"railway\"~\"^(rail|subway|light_rail)$\"];" +
+        "node(around:$radius,$where)[\"amenity\"~\"^(fuel|hospital|police|fire_station|bank|pharmacy)$\"][\"name\"];" +
+        "node(around:$radius,$where)[\"shop\"~\"^(convenience|supermarket|mall|department_store)$\"][\"name\"];" +
         "node(around:$radius,$where)[\"amenity\"~\"^(school|kindergarten)$\"];" +
         "way(around:$radius,$where)[\"amenity\"~\"^(school|kindergarten)$\"];" +
         "node(around:$radius,$where)[\"railway\"=\"station\"];" +
@@ -197,6 +203,8 @@ class RoadHub(private val cacheDir: File) {
             val waters = ArrayList<List<LatLon>>()
             val labels = ArrayList<MapLabel>()
             val marks = ArrayList<Mark>()
+            val paths = ArrayList<List<LatLon>>()
+            val rails = ArrayList<List<LatLon>>()
             val named = HashSet<String>()
             for (i in 0 until elements.length()) {
                 val e = elements.getJSONObject(i)
@@ -212,13 +220,18 @@ class RoadHub(private val cacheDir: File) {
                 val isWay = points.size >= 2
                 var label = false
                 when {
+                    isWay && highway in PATH_KINDS -> paths += points
+                    isWay && tags.has("railway") -> rails += points
                     isWay && highway.isNotEmpty() -> {
                         val level = MapMath.levelOf(highway)
                         roads += Road(points, level)
-                        // 길 이름은 큰길과 중간 길만, 같은 이름은 약 400m에 한 번만 쓴다
-                        if (name.isNotEmpty() && level <= 1 && named.add("$name ${(center.lat * 250).toInt()} ${(center.lon * 250).toInt()}")) labels += MapLabel(points[points.size / 2], name, road = true)
+                        // 길 이름은 동네 길까지, 같은 이름은 약 400m에 한 번만 쓴다
+                        if (name.isNotEmpty() && level <= 2 && named.add("$name ${(center.lat * 250).toInt()} ${(center.lon * 250).toInt()}")) labels += MapLabel(points[points.size / 2], name, road = true)
                     }
                     highway == "traffic_signals" -> marks += Mark(center, MarkKind.SIGNAL)
+                    highway == "crossing" -> marks += Mark(center, MarkKind.CROSSING)
+                    !isWay && (tags.has("shop") || amenity in POI_KINDS) -> label = true
+                    amenity == "parking" -> if (points.size >= 3) areas += Area(points, AreaKind.PARKING)
                     highway == "speed_camera" -> marks += Mark(center, MarkKind.CAMERA)
                     tags.has("traffic_calming") -> marks += Mark(center, MarkKind.BUMP)
                     amenity == "school" || amenity == "kindergarten" -> {
@@ -241,7 +254,7 @@ class RoadHub(private val cacheDir: File) {
                 // "138", "203동" 같은 동 번호는 길을 찾는 데 도움이 안 되어 뺀다
                 if (label && name.length >= 2 && !NUMBER_ONLY.matches(name) && named.add(name)) labels += MapLabel(center, name, road = false)
             }
-            return MapData(roads, areas, waters, labels, marks)
+            return MapData(roads, areas, waters, paths, rails, labels, marks)
         }
 
         /** Overpass 응답(JSON)을 길 목록으로 바꾼다. 앱에 넣어 둔 데모 구간 자료를 읽는 데도 쓴다 */
@@ -267,6 +280,8 @@ class RoadHub(private val cacheDir: File) {
         )
         private const val KINDS = "motorway|trunk|primary|secondary|tertiary|residential|unclassified|living_street|service"
         private const val RADIUS_M = 600
+        private val PATH_KINDS = setOf("footway", "pedestrian", "path", "cycleway")
+        private val POI_KINDS = setOf("fuel", "hospital", "police", "fire_station", "bank", "pharmacy")
         private val NUMBER_ONLY = Regex("^[0-9A-Za-z-]+동?$")
         private const val CORRIDOR_RADIUS_M = 250
         private const val TERRAIN_RADIUS_M = 450

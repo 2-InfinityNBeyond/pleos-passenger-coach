@@ -7,7 +7,7 @@ import kotlin.math.sin
 data class Road(val points: List<LatLon>, val level: Int)
 
 /** 지도에 칠할 넓은 곳 */
-enum class AreaKind { BUILDING, GREEN, WATER }
+enum class AreaKind { BUILDING, GREEN, WATER, PARKING }
 
 data class Area(val points: List<LatLon>, val kind: AreaKind) {
     /** 멀리 있는 것을 빨리 걸러 내려고 가운데 점을 미리 구해 둔다 */
@@ -17,8 +17,8 @@ data class Area(val points: List<LatLon>, val kind: AreaKind) {
 /** 지도에 쓸 이름. [road]면 길 이름, 아니면 건물이나 장소 이름 */
 data class MapLabel(val at: LatLon, val text: String, val road: Boolean)
 
-/** 길 위의 시설: 신호등, 단속 카메라, 과속방지턱, 학교 */
-enum class MarkKind { SIGNAL, CAMERA, BUMP, SCHOOL }
+/** 길 위의 시설: 신호등, 단속 카메라, 과속방지턱, 학교, 횡단보도 */
+enum class MarkKind { SIGNAL, CAMERA, BUMP, SCHOOL, CROSSING }
 
 data class Mark(val at: LatLon, val kind: MarkKind)
 
@@ -27,6 +27,10 @@ data class MapData(
     val roads: List<Road> = emptyList(),
     val areas: List<Area> = emptyList(),
     val waters: List<List<LatLon>> = emptyList(),
+    /** 보행로와 자전거길(가는 선) */
+    val paths: List<List<LatLon>> = emptyList(),
+    /** 철도 */
+    val rails: List<List<LatLon>> = emptyList(),
     val labels: List<MapLabel> = emptyList(),
     val marks: List<Mark> = emptyList(),
 )

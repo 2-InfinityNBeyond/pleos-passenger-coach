@@ -11,6 +11,9 @@ enum class NaviTurnKind { LEFT, RIGHT, UTURN, OTHER }
 /** 해설이 속한 연습 상황: 회전(깜빡이, 핸들), 출발과 정차(브레이크, 기어), 주차(기어 R에서 일어난 모든 조작), 등화와 장치(전조등, 와이퍼, 안전벨트, 문) */
 enum class CoachTopic { TURN, STOP, PARK, DEVICE }
 
+/** 차 가까이에 있는 것(지도 자료에서 찾음). 요령을 상황에 맞게 고르는 데 쓴다 */
+enum class Place { CROSSING, SIGNAL, SCHOOL }
+
 /**
  * 코치 해설 규칙(요구서 F2 이벤트 감지, F3 코치 해설).
  * 점수나 평가 표현 없이, 일어난 일만 한 문장으로 알려 준다.
@@ -195,11 +198,37 @@ class CoachEngine {
 
     /** 같은 조작이 다시 나오면 같은 말을 되풀이하지 않고, 그 조작의 다른 요령을 돌아가며 보여 준다 */
     private fun vary(reason: String?): String? {
-        val pool = VARIANTS[reason ?: return null] ?: return reason
-        val n = shown.getOrDefault(reason, 0)
-        shown[reason] = n + 1
+        val byScene = VARIANTS[reason ?: return null] ?: return reason
+        val scene = scene().takeIf { it in byScene } ?: Scene.GENERAL
+        val pool = byScene[scene] ?: return reason
+        val key = "$reason/$scene"
+        val n = shown.getOrDefault(key, 0)
+        shown[key] = n + 1
         return pool[n % pool.size]
     }
+
+    /** 지금이 어떤 상황인지: 기어, 가까운 곳의 시설(횡단보도, 신호등, 학교), 내비 안내로 판단한다 */
+    private fun scene(): Scene = when {
+        prevGear == GearKind.REVERSE -> Scene.PARKING
+        prevGear == GearKind.PARK -> Scene.PARKED
+        place != null -> place!!
+        naviKind != null && naviSinceMs != 0L -> Scene.TURN
+        else -> Scene.GENERAL
+    }
+
+    private var place: Scene? = null
+
+    /** 지도에서 찾은, 지금 차 가까이에 있는 것을 알려 준다(없으면 null). 요령을 상황에 맞게 고르는 데 쓴다 */
+    fun onPlace(near: Place?) {
+        place = when (near) {
+            Place.CROSSING -> Scene.CROSSING
+            Place.SIGNAL -> Scene.SIGNAL
+            Place.SCHOOL -> Scene.SCHOOL
+            null -> null
+        }
+    }
+
+    private enum class Scene { GENERAL, TURN, CROSSING, SIGNAL, SCHOOL, PARKING, PARKED }
 
     private fun gearWhy(gear: GearKind): String? = when (gear) {
         GearKind.PARK -> "P는 바퀴를 잠가요. 차가 완전히 멈춘 뒤에 넣어요."
@@ -292,48 +321,116 @@ class CoachEngine {
         private const val BRAKE_ON_WHY = "미리 가볍게 밟고, 멈추기 직전에 살짝 풀면 몸이 앞으로 쏠리지 않아요."
         private const val BRAKE_OFF_WHY = "발만 떼도 차가 천천히 나가요. 좁은 곳에서는 이 속도로만 움직여요."
 
-        /** 같은 조작에 돌아가며 보여 줄 요령들. 맨 앞이 처음 나오는 말이다. shortcut: 초안, 전문가 검수 뒤 교체 */
-        private val VARIANTS: Map<String, List<String>> by lazy {
+        /**
+         * 같은 조작이라도 상황에 맞는 요령만 고르고, 그 안에서 돌아가며 보여 준다. 맨 앞이 처음 나오는 말이다.
+         * 상황에 맞는 묶음이 없으면 GENERAL을 쓴다. 주차 중에 횡단보도 얘기를 하는 것처럼 상황과 안 맞는 말은 하지 않는다(사용자 피드백).
+         * shortcut: 초안, 전문가 검수 뒤 교체
+         */
+        private val VARIANTS: Map<String, Map<Scene, List<String>>> by lazy {
             mapOf(
-                BLINK_ON_WHY to listOf(
-                    BLINK_ON_WHY,
-                    "깜빡이를 켰다고 바로 들어가지 않아요. 켜고, 보고, 그다음에 움직여요.",
-                    "깜빡이는 비켜 달라는 뜻이 아니라 알리는 거예요. 틈이 있을 때만 들어가요.",
-                    "우회전하자마자 또 우회전할 땐, 첫 회전을 끝낸 뒤에 다시 켜야 뒤차가 안 헷갈려요.",
+                BLINK_ON_WHY to mapOf(
+                    Scene.GENERAL to listOf(
+                        BLINK_ON_WHY,
+                        "차로를 바꿀 땐 깜빡이 3초, 사이드미러, 고개 돌려 옆 확인, 그다음에 옮겨요.",
+                        "깜빡이는 비켜 달라는 뜻이 아니라 알리는 거예요. 틈이 있을 때만 들어가요.",
+                    ),
+                    Scene.TURN to listOf(
+                        "회전할 곳 30m 전부터 켜요. 너무 일찍 켜면 그 앞 골목으로 들어가는 줄 알아요.",
+                        "깜빡이를 켜면서 그쪽 사이드미러를 봐요. 옆으로 오토바이가 붙어 있을 수 있어요.",
+                        "회전 차로에 미리 들어가 있어야 해요. 교차로 바로 앞 실선에서는 못 바꿔요.",
+                    ),
+                    Scene.PARKING to listOf(
+                        "주차 칸에 들어갈 때도 깜빡이를 켜 두면 뒤차가 기다려 줘요.",
+                        "주차장에서는 비상등을 켜고 후진하는 차도 많아요. 뒤차에 알리는 거예요.",
+                    ),
+                    Scene.PARKED to listOf(
+                        "길가에서 출발할 땐 깜빡이를 켜고, 어깨 너머로 뒤에서 오는 차를 직접 봐요.",
+                        "주차 칸에서 나갈 때도 나갈 방향 깜빡이를 켜요.",
+                    ),
                 ),
-                BLINK_OFF_WHY to listOf(
-                    BLINK_OFF_WHY,
-                    "깜빡이를 켠 채 계속 달리면 뒤차가 헷갈려요. 끝나면 바로 꺼요.",
+                BLINK_OFF_WHY to mapOf(
+                    Scene.GENERAL to listOf(
+                        BLINK_OFF_WHY,
+                        "깜빡이를 켠 채 계속 달리면 뒤차가 헷갈려요. 끝나면 바로 꺼요.",
+                    ),
                 ),
-                BRAKE_ON_WHY to listOf(
-                    BRAKE_ON_WHY,
-                    "앞차만 보지 말고 두세 대 앞의 브레이크등을 보면 미리 밟을 수 있어요.",
-                    "횡단보도 앞에서는 사람이 건너려고 서 있기만 해도 멈춰요.",
-                    "멈출 땐 앞차 뒷바퀴가 보이는 거리에 서요.",
-                    "긴 내리막에서는 계속 밟고 있지 말고 나눠 밟아요.",
+                BRAKE_ON_WHY to mapOf(
+                    Scene.GENERAL to listOf(
+                        BRAKE_ON_WHY,
+                        "앞차만 보지 말고 두세 대 앞의 브레이크등을 보면 미리 밟을 수 있어요.",
+                        "멈출 땐 앞차 뒷바퀴가 보이는 거리에 서요.",
+                        "긴 내리막에서는 계속 밟고 있지 말고 나눠 밟아요.",
+                    ),
+                    Scene.TURN to listOf(
+                        "돌기 전, 곧게 가는 동안 속도를 줄여요. 도는 중에 세게 밟으면 차가 흔들려요.",
+                        "회전해서 들어가는 길의 횡단보도에 사람이 있으면 그 앞에서 멈춰요.",
+                    ),
+                    Scene.CROSSING to listOf(
+                        "횡단보도 앞이에요. 건너려는 사람이 서 있기만 해도 멈춰요.",
+                        "횡단보도에서는 정지선 앞에 서요. 선을 넘어 서면 건너는 사람 길을 막아요.",
+                    ),
+                    Scene.SIGNAL to listOf(
+                        "신호등 앞이에요. 노란불에 멈출 수 있으면 멈추고, 정지선을 넘지 않아요.",
+                        "신호 대기 중에는 앞차 뒷바퀴가 보이는 거리에 서요.",
+                    ),
+                    Scene.SCHOOL to listOf(
+                        "학교 근처예요. 어린이 보호구역이면 시속 30 이하로 미리 줄여요.",
+                        "주차된 차 사이에서 아이가 나올 수 있어요. 발을 브레이크 위에 올려 둬요.",
+                    ),
+                    Scene.PARKING to listOf(
+                        "주차할 땐 브레이크에서 발을 다 떼지 않고, 살짝 풀었다 밟았다 하며 속도를 맞춰요.",
+                        "헷갈리면 일단 멈춰요. 멈춘 채로 핸들을 돌리고 다시 움직여도 돼요.",
+                        "다 들어왔으면 완전히 멈춘 뒤에 P로 바꿔요.",
+                    ),
+                    Scene.PARKED to listOf(
+                        "기어는 브레이크를 밟은 채로 바꿔요.",
+                        "브레이크를 끝까지 밟았을 때 무릎이 살짝 굽혀지면 좌석 거리가 맞아요.",
+                    ),
                 ),
-                BRAKE_OFF_WHY to listOf(
-                    BRAKE_OFF_WHY,
-                    "초록불로 바뀌어도 한 박자 쉬고 출발해요. 늦게 지나가는 차가 있어요.",
-                    "출발할 땐 가속 페달을 살살 밟아요. 확 밟으면 몸이 뒤로 젖혀져요.",
-                    "출발 전에 횡단보도에 아직 사람이 남아 있는지 한 번 더 봐요.",
+                BRAKE_OFF_WHY to mapOf(
+                    Scene.GENERAL to listOf(
+                        "출발할 땐 가속 페달을 살살 밟아요. 확 밟으면 몸이 뒤로 젖혀져요.",
+                        "앞차가 출발하고 한 박자 뒤에 따라가요. 바짝 붙어 출발하지 않아요.",
+                        BRAKE_OFF_WHY,
+                    ),
+                    Scene.SIGNAL to listOf(
+                        "초록불로 바뀌어도 한 박자 쉬고 출발해요. 늦게 지나가는 차가 있어요.",
+                        "출발하기 전에 횡단보도에 아직 사람이 남아 있는지 한 번 더 봐요.",
+                    ),
+                    Scene.CROSSING to listOf(
+                        "사람이 다 건넌 걸 확인하고 출발해요. 뒤늦게 뛰어오는 사람도 있어요.",
+                    ),
+                    Scene.PARKING to listOf(
+                        BRAKE_OFF_WHY,
+                        "후진은 발만 살짝 떼서 걷는 속도로 움직여요. 가속 페달은 밟지 않아요.",
+                    ),
+                    Scene.PARKED to listOf(
+                        "P에서는 발을 떼도 차가 움직이지 않아요. 내리기 전에 주차 브레이크도 걸어요.",
+                    ),
                 ),
-                STEER_WHY to listOf(
-                    STEER_WHY,
-                    "돌기 전에 속도를 줄여요. 도는 중에 브레이크를 세게 밟으면 차가 흔들려요.",
-                    "핸들은 양손으로 9시와 3시 자리를 잡아요. 크게 돌릴 땐 손을 번갈아 넘겨요.",
-                    "돌고 나면 핸들이 저절로 풀리려 해요. 놓지 말고 손으로 따라가며 풀어요.",
+                STEER_WHY to mapOf(
+                    Scene.GENERAL to listOf(
+                        STEER_WHY,
+                        "차로를 바꿀 땐 핸들을 아주 조금만 돌려요. 시선은 옮겨 갈 차로 멀리.",
+                        "핸들은 양손으로 9시와 3시 자리를 잡아요. 크게 돌릴 땐 손을 번갈아 넘겨요.",
+                    ),
+                    Scene.TURN to listOf(
+                        STEER_WHY,
+                        "돌고 나면 핸들이 저절로 풀리려 해요. 놓지 말고 손으로 따라가며 풀어요.",
+                        "교차로에서는 바닥의 유도선을 따라 돌아요. 들어갈 차로를 미리 정해 둬요.",
+                    ),
                 ),
-                REVERSE_WHY to listOf(
-                    REVERSE_WHY,
-                    "후진 주차는 사이드미러로 주차선과 뒷바퀴 사이를 봐요. 양쪽 간격이 같아지면 핸들을 풀어요.",
-                    "한 번에 넣으려 하지 않아요. 틀어지면 앞으로 조금 뺐다가 다시 들어가요.",
-                    "T자 주차는 칸을 조금 지나쳐 세운 뒤, 핸들을 끝까지 돌리고 아주 천천히 들어가요.",
-                    "뒤가 들어갈 때 앞머리는 반대쪽으로 크게 돌아요. 앞 모서리와 옆 차 사이도 봐요.",
+                REVERSE_WHY to mapOf(
+                    Scene.GENERAL to listOf(
+                        REVERSE_WHY,
+                        "후진 주차는 사이드미러로 주차선과 뒷바퀴 사이를 봐요. 양쪽 간격이 같아지면 핸들을 풀어요.",
+                        "한 번에 넣으려 하지 않아요. 틀어지면 앞으로 조금 뺐다가 다시 들어가요.",
+                        "T자 주차는 칸을 조금 지나쳐 세운 뒤, 핸들을 끝까지 돌리고 아주 천천히 들어가요.",
+                        "뒤가 들어갈 때 앞머리는 반대쪽으로 크게 돌아요. 앞 모서리와 옆 차 사이도 봐요.",
+                    ),
                 ),
             )
         }
-
         private const val STEER_WHY = "시선을 가려는 곳 멀리 두면 핸들은 따라가요. 돌린 만큼 풀어야 곧게 가요."
         private const val REVERSE_WHY = "후진할 때는 핸들을 돌린 쪽으로 차 뒤쪽이 움직여요."
 

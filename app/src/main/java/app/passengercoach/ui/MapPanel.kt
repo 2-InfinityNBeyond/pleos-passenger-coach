@@ -49,12 +49,20 @@ internal fun MapPanel(lat: Double?, lon: Double?, heading: Double?, roads: List<
             val green = if (dark) Color(0xFF15301F) else Color(0xFFCFE9D2)
             val water = if (dark) Color(0xFF14283C) else Color(0xFFBEDBF3)
             val building = if (dark) Color(0xFF232333) else Color(0xFFD5D6E4)
-            for (kind in listOf(AreaKind.GREEN, AreaKind.WATER, AreaKind.BUILDING)) {
+            val parking = if (dark) Color(0xFF1B1D2E) else Color(0xFFDDE3F3)
+            for (kind in listOf(AreaKind.GREEN, AreaKind.WATER, AreaKind.PARKING, AreaKind.BUILDING)) {
                 val shape = Path()
                 map.areas.forEach { if (it.kind == kind) area(shape, car, h, it) }
                 if (kind == AreaKind.WATER) map.waters.forEach { band(shape, car, h, it, 14.0, 2f) }
-                drawPath(shape, when (kind) { AreaKind.GREEN -> green; AreaKind.WATER -> water; AreaKind.BUILDING -> building })
+                drawPath(shape, when (kind) { AreaKind.GREEN -> green; AreaKind.WATER -> water; AreaKind.PARKING -> parking; AreaKind.BUILDING -> building })
             }
+            // 보행로는 가는 선으로, 철도는 짙은 선으로
+            val thin = Path()
+            map.paths.forEach { band(thin, car, h, it, 2.5, 1f) }
+            drawPath(thin, c.card.copy(alpha = 0.6f))
+            val rail = Path()
+            map.rails.forEach { band(rail, car, h, it, 4.0, 1.5f) }
+            drawPath(rail, if (dark) Color(0xFF55546E) else Color(0xFF9D9CB4))
         }
         // 작은 길부터 그려서 큰길이 위에 오게 한다
         for (level in 3 downTo 0) {
@@ -141,6 +149,10 @@ private fun DrawScope.mark(car: LatLon, heading: Double, m: Mark, c: CockpitColo
     val at = Offset(s[0].toFloat(), s[1].toFloat())
     val r = 9.dp.toPx()
     when (m.kind) {
+        // 횡단보도: 흰 막대 세 줄(가까운 것만, 멀면 점이 되어 지저분하다)
+        MarkKind.CROSSING -> if (l.second < 260) {
+            for (i in -1..1) drawRoundRect(Color.White, topLeft = Offset(at.x - r * 0.7f, at.y + i * r * 0.42f - r * 0.12f), size = androidx.compose.ui.geometry.Size(r * 1.4f, r * 0.24f), cornerRadius = androidx.compose.ui.geometry.CornerRadius(2f))
+        }
         MarkKind.SIGNAL -> {
             drawRoundRect(Color(0xFF17162B), topLeft = Offset(at.x - r * 0.45f, at.y - r * 1.2f), size = androidx.compose.ui.geometry.Size(r * 0.9f, r * 2.4f), cornerRadius = androidx.compose.ui.geometry.CornerRadius(r * 0.4f))
             listOf(c.red, Color(0xFFF59E0B), c.green).forEachIndexed { i, color -> drawCircle(color, radius = r * 0.26f, center = Offset(at.x, at.y + (i - 1) * r * 0.7f)) }
@@ -190,7 +202,7 @@ private fun DrawScope.labels(car: LatLon, heading: Double, labels: List<MapLabel
         }
 }
 
-private const val MAX_LABELS = 7
+private const val MAX_LABELS = 11
 
 /** 길이나 경로 한 줄을 원근에 맞춰 그린다. 먼 곳일수록 가늘어지고, [minPx]보다 가늘어지지는 않는다 */
 private fun DrawScope.way(car: LatLon, heading: Double, points: List<LatLon>, widthM: Double, color: Color, minPx: Float) {

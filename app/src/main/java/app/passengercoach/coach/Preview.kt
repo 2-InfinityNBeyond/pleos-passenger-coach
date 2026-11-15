@@ -73,7 +73,7 @@ object Preview {
                 MarkKind.BUMP -> SpotKind.BUMP
                 MarkKind.CAMERA -> SpotKind.CAMERA
                 MarkKind.SCHOOL -> SpotKind.SCHOOL
-                MarkKind.SIGNAL -> continue
+                MarkKind.SIGNAL, MarkKind.CROSSING -> continue
             }
             val at = RouteMath.alongOf(route.points, m.at)
             val far = RouteMath.distanceM(RouteMath.along(route.points, at).first, m.at)

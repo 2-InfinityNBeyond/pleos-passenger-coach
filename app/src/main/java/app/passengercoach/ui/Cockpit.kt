@@ -9,6 +9,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -209,9 +211,10 @@ internal fun CockpitScreen(
         }
 
         // 미리 가 보기 화면과 같은 배치: 지도 바로 아래에 해설 칸, 그 아래에 계기판
-        Row(Modifier.fillMaxWidth().height(72.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        // 글자가 길면 잘라 내지 않고 칸이 두 줄로 늘어난다(그만큼 지도가 조금 줄어든다)
+        Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(
-                Modifier.weight(1f).fillMaxHeight().background(c.bar, RoundedCornerShape(20.dp)).padding(horizontal = 18.dp),
+                Modifier.weight(1f).fillMaxHeight().heightIn(min = 72.dp).background(c.bar, RoundedCornerShape(20.dp)).padding(horizontal = 18.dp, vertical = 8.dp),
                 verticalArrangement = Arrangement.Center,
             ) {
                 // 해설이 없고 멈춰 있을 때는 같은 칸에서 알아 두기 한 줄을 보여 준다
@@ -219,10 +222,10 @@ internal fun CockpitScreen(
                 val idleTip = tip?.lines?.let { it.getOrNull(((now / 9_000) % it.size.coerceAtLeast(1)).toInt()) }?.takeIf { message == null && (still || reversing) }
                 Text(
                     message ?: idleTip ?: "운전자의 조작을 한 문장으로 알려 줘요",
-                    fontSize = if ((message ?: idleTip ?: "").length > 30) 16.sp else 19.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    fontSize = if ((message ?: idleTip ?: "").length > 30) 17.sp else 19.sp, fontWeight = FontWeight.Bold, maxLines = 2, lineHeight = 24.sp,
                     color = if (message == null && idleTip == null || messageOld) c.barMuted else c.barText,
                 )
-                if (message != null && why != null) Text(why, fontSize = 15.sp, color = c.barMuted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (message != null && why != null) Text(why, fontSize = 15.sp, color = c.barMuted, maxLines = 2, lineHeight = 20.sp)
                 else if (idleTip != null && tip != null) Text("알아 두기 · ${tip.title}", fontSize = 15.sp, color = c.barMuted, maxLines = 1)
             }
             Box(

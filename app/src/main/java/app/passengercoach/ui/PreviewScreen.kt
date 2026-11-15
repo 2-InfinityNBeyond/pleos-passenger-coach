@@ -7,6 +7,8 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -158,14 +160,15 @@ internal fun PreviewScreen(here: LatLon?, dest: LatLon?, routes: RouteHub, roads
         }
 
         // 안내 칸은 지도를 가리지 않게 지도 바로 아래에 둔다(눈이 지도에서 조금만 내려오면 된다)
-        Row(Modifier.fillMaxWidth().height(72.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        // 글자가 길면 잘라 내지 않고 칸이 두 줄로 늘어난다(그만큼 지도가 조금 줄어든다)
+        Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
             val tip = when {
                 p == null -> null
                 current != null -> Preview.tip(p, current)
                 done -> "도착했어요. 짚어 본 곳은 ${p.spots.size}곳이에요" to ""
                 else -> null
             }
-            SpotBanner(current ?: next, atM, tip, c, Modifier.weight(1f).fillMaxHeight())
+            SpotBanner(current ?: next, atM, tip, c, Modifier.weight(1f).fillMaxHeight().heightIn(min = 72.dp))
             if (current?.kind == SpotKind.BUSY) {
                 Canvas(
                     Modifier.size(76.dp, 72.dp).background(c.card, RoundedCornerShape(20.dp))
@@ -264,7 +267,7 @@ private fun glyphOf(kind: SpotKind): Glyph = when (kind) {
 @Composable
 private fun SpotBanner(spot: Spot?, atM: Double, tip: Pair<String, String>?, c: CockpitColors, modifier: Modifier) {
     Row(
-        modifier.background(c.chip, RoundedCornerShape(20.dp)).padding(start = 12.dp, end = 18.dp),
+        modifier.background(c.chip, RoundedCornerShape(20.dp)).padding(start = 12.dp, end = 18.dp, top = 8.dp, bottom = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically,
     ) {
         if (spot != null) {
@@ -279,7 +282,7 @@ private fun SpotBanner(spot: Spot?, atM: Double, tip: Pair<String, String>?, c: 
         if (tip != null) {
             if (spot != null) Box(Modifier.size(1.dp, 44.dp).background(c.chipMuted.copy(alpha = 0.4f)))
             Column(Modifier.weight(1f, fill = false), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(tip.first, fontSize = 17.sp, fontWeight = FontWeight.Bold, color = c.chipText, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(tip.first, fontSize = 17.sp, fontWeight = FontWeight.Bold, color = c.chipText, maxLines = 2, lineHeight = 22.sp)
                 if (tip.second.isNotEmpty()) Text(tip.second, fontSize = 15.sp, color = c.chipMuted, maxLines = 2, lineHeight = 19.sp)
             }
         }

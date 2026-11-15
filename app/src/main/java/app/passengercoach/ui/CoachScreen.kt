@@ -60,6 +60,9 @@ import app.passengercoach.coach.CoachEngine
 import app.passengercoach.coach.CoachTopic
 import app.passengercoach.coach.LatLon
 import app.passengercoach.coach.MapData
+import app.passengercoach.coach.MarkKind
+import app.passengercoach.coach.Place
+import app.passengercoach.coach.RouteMath
 import app.passengercoach.coach.Record
 import app.passengercoach.coach.Recap
 import app.passengercoach.coach.RecordStore
@@ -257,9 +260,26 @@ private fun CoachApp(hub: SignalHub, navi: NaviHub, lights: TrafficLightHub, rou
         if (!demoOn && route.size >= 2) routeMap = withContext(Dispatchers.IO) { runCatching { roads.corridor(route) }.getOrNull() }
     }
     val mapData = if (demoOn) demoMap else routeMap ?: liveMap
+    // 지금 차 가까이에 횡단보도, 신호등, 학교가 있는지 지도 자료에서 찾아 해설 엔진에 알려 준다(상황에 맞는 요령을 고르게)
+    val nearPlace = remember(naviSnapshot.lat, naviSnapshot.lon, mapData) {
+        val lat = naviSnapshot.lat
+        val lon = naviSnapshot.lon
+        val marks = mapData?.marks
+        if (lat == null || lon == null || marks == null) null else {
+            val here = LatLon(lat, lon)
+            fun near(kind: MarkKind, meters: Double) = marks.any { it.kind == kind && RouteMath.distanceM(here, it.at) <= meters }
+            when {
+                near(MarkKind.CROSSING, 35.0) -> Place.CROSSING
+                near(MarkKind.SIGNAL, 60.0) -> Place.SIGNAL
+                near(MarkKind.SCHOOL, 120.0) -> Place.SCHOOL
+                else -> null
+            }
+        }
+    }
     LaunchedEffect(naviSnapshot.lat, naviSnapshot.lon, demoOn) { if (!demoOn) roads.onLocation(naviSnapshot.lat, naviSnapshot.lon) }
 
     val engine = remember(demoOn) { CoachEngine() }
+    engine.onPlace(nearPlace)
     var message by remember(demoOn) { mutableStateOf<String?>(null) }
     var messageAtMs by remember(demoOn) { mutableLongStateOf(0L) }
     var why by remember(demoOn) { mutableStateOf<String?>(null) }
