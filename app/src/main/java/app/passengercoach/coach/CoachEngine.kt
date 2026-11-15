@@ -89,7 +89,7 @@ class CoachEngine {
             val before = prevBrake
             if (before != null && brakeOn != before) {
                 message = if (brakeOn) "브레이크를 밟았어요." else "브레이크를 뗐어요."
-                reason = if (brakeOn) "브레이크는 속도를 줄이거나 멈출 때 밟아요." else "브레이크에서 발을 떼면 차가 다시 움직일 수 있어요."
+                reason = if (brakeOn) "미리 가볍게 밟고, 멈추기 직전에 살짝 풀면 몸이 앞으로 쏠리지 않아요." else "발만 떼도 차가 천천히 나가요. 좁은 곳에서는 이 속도로만 움직여요."
                 kind = CoachTopic.STOP
                 // 주차의 핵심 순서: 핸들을 먼저 돌려 놓고 브레이크를 떼서 움직인다
                 val held = steeringDeg ?: lastSteer
@@ -114,7 +114,7 @@ class CoachEngine {
                     steeredAfterTurn = false
                     naviLinkMessage(turn, nowMs) ?: "${dirName(turn)} 깜빡이를 켰어요."
                 }
-                reason = if (turn == TurnDir.OFF) "방향을 다 바꾸면 깜빡이를 꺼요." else "깜빡이는 주변 차와 보행자에게 갈 방향을 미리 알려요."
+                reason = if (turn == TurnDir.OFF) "핸들이 풀리면 저절로 꺼져요. 차로 변경처럼 조금만 돌렸을 땐 직접 꺼요." else "움직이기 전에 켜요. 회전은 30m 전부터, 차로 변경은 3초쯤 먼저 켜 둬요."
                 kind = CoachTopic.TURN
             }
             prevTurn = turn
@@ -192,10 +192,10 @@ class CoachEngine {
     }
 
     private fun gearWhy(gear: GearKind): String? = when (gear) {
-        GearKind.PARK -> "P는 차를 세워 둘 때 쓰는 기어예요."
-        GearKind.NEUTRAL -> "N은 바퀴에 힘이 전달되지 않는 기어예요."
-        GearKind.REVERSE -> "R은 뒤로 갈 때 쓰는 기어예요."
-        GearKind.DRIVE -> "D는 앞으로 갈 때 쓰는 기어예요."
+        GearKind.PARK -> "P는 바퀴를 잠가요. 차가 완전히 멈춘 뒤에 넣어요."
+        GearKind.NEUTRAL -> "N은 힘이 끊겨요. 경사에서는 차가 저절로 굴러가니 브레이크를 밟고 있어요."
+        GearKind.REVERSE -> "R은 완전히 멈춘 뒤에 넣어요. 넣자마자 발을 떼지 말고 뒤부터 살펴요."
+        GearKind.DRIVE -> "D에서는 브레이크만 떼도 차가 천천히 굴러가요."
         GearKind.OTHER -> null
     }
 
@@ -264,9 +264,9 @@ class CoachEngine {
     companion object {
         // 추가 조작별 (켜짐/참일 때, 꺼짐/거짓일 때)의 해설과 쓰임. 순서: 전조등, 상향등, 와이퍼, 안전벨트 경고, 문 열림
         private val EXTRA_LINES = listOf(
-            listOf("전조등을 켰어요." to "전조등은 어두울 때 앞을 비추고, 내 차가 다른 차에 보이게 해요.", "전조등을 껐어요." to null),
+            listOf("전조등을 켰어요." to "전조등은 남에게 내 차를 보이려고도 켜요. 비 오는 낮, 터널에서도 켜요.", "전조등을 껐어요." to null),
             listOf("상향등을 켰어요." to "상향등은 더 멀리 비춰요. 마주 오는 차가 있으면 눈이 부시지 않게 낮춰요.", "상향등을 껐어요." to null),
-            listOf("와이퍼를 켰어요." to "와이퍼는 비나 눈으로 앞이 흐릴 때 유리를 닦아요.", "와이퍼를 껐어요." to null),
+            listOf("와이퍼를 켰어요." to "앞이 흐려지기 전에 켜요. 큰 차 옆을 지날 때 튀는 물에도 앞이 가려요.", "와이퍼를 껐어요." to null),
             listOf("운전석 안전벨트가 풀렸어요." to "안전벨트는 모든 좌석이 매요. (도로교통법 제50조)", "운전자가 안전벨트를 맸어요." to "안전벨트는 모든 좌석이 매요. (도로교통법 제50조)"),
             listOf("문이 열렸어요." to "문을 열기 전에는 뒤에서 오는 차와 자전거를 확인해요.", "문이 모두 닫혔어요." to null),
         )
@@ -275,7 +275,7 @@ class CoachEngine {
 
         /** 줄 세워 둔 해설이 이보다 늦어지면 말하지 않는다(지난 일을 지금 일처럼 말하지 않으려고) */
         const val EXTRA_STALE_MS = 5_000L
-        private const val STEER_WHY = "핸들을 돌린 쪽으로 차가 방향을 바꿔요."
+        private const val STEER_WHY = "시선을 가려는 곳 멀리 두면 핸들은 따라가요. 돌린 만큼 풀어야 곧게 가요."
         private const val REVERSE_WHY = "후진할 때는 핸들을 돌린 쪽으로 차 뒤쪽이 움직여요."
 
         /** 핸들 반 바퀴(도) */

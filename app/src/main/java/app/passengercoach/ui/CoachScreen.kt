@@ -59,6 +59,7 @@ import androidx.compose.ui.unit.sp
 import app.passengercoach.coach.CoachEngine
 import app.passengercoach.coach.CoachTopic
 import app.passengercoach.coach.LatLon
+import app.passengercoach.coach.MapData
 import app.passengercoach.coach.Record
 import app.passengercoach.coach.Recap
 import app.passengercoach.coach.RecordStore
@@ -242,6 +243,19 @@ private fun CoachApp(hub: SignalHub, navi: NaviHub, lights: TrafficLightHub, rou
     val liveRoads by roads.state.collectAsState()
     val demoRoads = remember { runCatching { RoadHub.parse(context.assets.open("demo_roads.json").bufferedReader().use { it.readText() }) }.getOrDefault(emptyList()) }
     val roadList = if (demoOn) demoRoads else liveRoads
+    // 주변 지형(건물, 녹지, 하천, 이름, 신호등): 경로가 있으면 경로를 따라 한 번에, 없으면 지금 위치 주변을 받는다
+    // 데모는 앱에 넣어 둔 지도 자료를 쓴다(데모 구간이 그 안에 있다)
+    val liveMap by roads.map.collectAsState()
+    var routeMap by remember { mutableStateOf<MapData?>(null) }
+    var demoMap by remember { mutableStateOf<MapData?>(null) }
+    LaunchedEffect(Unit) {
+        demoMap = withContext(Dispatchers.IO) { runCatching { RoadHub.parseMap(context.assets.open("preview_map.json").bufferedReader().use { it.readText() }) }.getOrNull() }
+    }
+    LaunchedEffect(route, demoOn) {
+        routeMap = null
+        if (!demoOn && route.size >= 2) routeMap = withContext(Dispatchers.IO) { runCatching { roads.corridor(route) }.getOrNull() }
+    }
+    val mapData = if (demoOn) demoMap else routeMap ?: liveMap
     LaunchedEffect(naviSnapshot.lat, naviSnapshot.lon, demoOn) { if (!demoOn) roads.onLocation(naviSnapshot.lat, naviSnapshot.lon) }
 
     val engine = remember(demoOn) { CoachEngine() }
@@ -363,7 +377,7 @@ private fun CoachApp(hub: SignalHub, navi: NaviHub, lights: TrafficLightHub, rou
                 )
             } else {
                 CockpitScreen(
-                    s = signals, n = naviSnapshot, light = light, roads = roadList, route = route, message = shownMessage, why = shownWhy, messageOld = messageOld,
+                    s = signals, n = naviSnapshot, light = light, roads = roadList, map = mapData, route = route, message = shownMessage, why = shownWhy, messageOld = messageOld,
                     recap = shownRecap, tip = shownTip, still = still, demoOn = demoOn, now = now, asked = asked,
                     onRetry = onRetry, onDemoTap = onDemoTap, onSettings = { page = Page.SETTINGS }, onPreview = { page = Page.PREVIEW },
                     onAsk = {

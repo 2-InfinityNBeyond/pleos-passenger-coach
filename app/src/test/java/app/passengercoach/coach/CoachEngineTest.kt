@@ -180,7 +180,7 @@ class CoachEngineTest {
         assertNull(e.why)
         val reasons = mutableListOf<String?>()
         e.feed(turn = TurnDir.LEFT, at = 1_000); reasons += e.why
-        assertEquals("깜빡이는 주변 차와 보행자에게 갈 방향을 미리 알려요.", e.why)
+        assertEquals("움직이기 전에 켜요. 회전은 30m 전부터, 차로 변경은 3초쯤 먼저 켜 둬요.", e.why)
         e.feed(turn = TurnDir.LEFT, steering = 30f, at = 2_000); reasons += e.why
         e.feed(turn = TurnDir.LEFT, steering = 0f, at = 3_000); reasons += e.why
         e.feed(turn = TurnDir.OFF, at = 4_000); reasons += e.why

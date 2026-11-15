@@ -50,6 +50,7 @@ import androidx.compose.ui.unit.sp
 import app.passengercoach.coach.CoachEngine
 import app.passengercoach.coach.DriveState
 import app.passengercoach.coach.LatLon
+import app.passengercoach.coach.MapData
 import app.passengercoach.coach.LightColor
 import app.passengercoach.coach.LightInfo
 import app.passengercoach.coach.LightPhase
@@ -103,6 +104,7 @@ internal fun CockpitScreen(
     n: NaviSnapshot,
     light: LightInfo?,
     roads: List<Road>,
+    map: MapData?,
     route: List<LatLon>,
     message: String?,
     why: String?,
@@ -135,7 +137,7 @@ internal fun CockpitScreen(
             if (reversing) {
                 RearView(s.steeringDeg ?: 0f, moving = s.brakeOn == false, demo = demoOn, modifier = Modifier.fillMaxSize())
             } else {
-                MapPanel(n.lat, n.lon, n.heading, roads, route, c, Modifier.fillMaxSize())
+                MapPanel(n.lat, n.lon, n.heading, roads, route, c, Modifier.fillMaxSize(), map = map)
                 // 먼 쪽을 흐리게 해서 앞유리 너머로 보는 느낌을 준다
                 Box(Modifier.fillMaxWidth().height(64.dp).background(Brush.verticalGradient(listOf(c.bg.copy(alpha = 0.75f), Color.Transparent))))
                 Text("© OpenStreetMap contributors", fontSize = 10.sp, color = c.muted, modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 4.dp))
@@ -175,21 +177,17 @@ internal fun CockpitScreen(
                 // 글자를 줄이려고 알아 두기는 첫 줄만 보여 준다(두 줄 모두는 이전 화면에서 볼 수 있다)
                 // 달리는 중에는 지도를 가리지 않게 알아 두기를 띄우지 않는다(멈췄을 때와 후진할 때만)
             val tipLines = tip?.lines?.take(1)?.takeIf { still || reversing }
-                if (recap.size >= 2 || tipLines != null) {
+                // 알아 두기는 지도를 가리지 않게 아래 해설 칸에서 보여 준다(해설이 없을 때)
+                if (recap.size >= 2) {
                     Column(
                         Modifier.widthIn(max = 330.dp).background(c.card.copy(alpha = 0.96f), RoundedCornerShape(18.dp)).padding(horizontal = 14.dp, vertical = 10.dp),
                         verticalArrangement = Arrangement.spacedBy(2.dp),
                     ) {
-                        if (recap.size >= 2) {
-                            Text("방금 한 조작", fontSize = 13.sp, color = c.muted)
-                            recap.forEachIndexed { i, text ->
-                                Text("${i + 1}. $text", fontSize = 15.sp, color = c.text, fontWeight = if (i == recap.lastIndex) FontWeight.Bold else FontWeight.Normal)
-                            }
-                            if (asked > 0) Text("물어볼 것 ${asked}개 · 설정에서 볼 수 있어요", fontSize = 13.sp, color = c.accent, fontWeight = FontWeight.Bold)
-                        } else if (tip != null && tipLines != null) {
-                            Text("알아 두기 · ${tip.title}", fontSize = 13.sp, color = c.muted)
-                            tipLines.forEach { Text(it, fontSize = 14.sp, color = c.text) }
+                        Text("방금 한 조작", fontSize = 13.sp, color = c.muted)
+                        recap.forEachIndexed { i, text ->
+                            Text("${i + 1}. $text", fontSize = 15.sp, color = c.text, fontWeight = if (i == recap.lastIndex) FontWeight.Bold else FontWeight.Normal)
                         }
+                        if (asked > 0) Text("물어볼 것 ${asked}개 · 설정에서 볼 수 있어요", fontSize = 13.sp, color = c.accent, fontWeight = FontWeight.Bold)
                     }
                 }
             }
@@ -242,6 +240,21 @@ internal fun CockpitScreen(
                     }
                 }
             }
+            // 미리 가 보기와 설정은 출발 전에 쓰는 것이라 해설 칸 옆이 아니라 여기에 둔다(해설 칸을 넓게 쓰려고)
+            Column(Modifier.width(60.dp).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Box(
+                    Modifier.weight(1f).fillMaxWidth().background(c.accent, RoundedCornerShape(22.dp)).clickable(role = Role.Button, onClick = onPreview).semantics { contentDescription = "미리 가 보기" },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Canvas(Modifier.size(34.dp)) { previewGlyph(c.onAccent) }
+                }
+                Box(
+                    Modifier.weight(1f).fillMaxWidth().background(c.card, RoundedCornerShape(22.dp)).clickable(role = Role.Button, onClick = onSettings).semantics { contentDescription = "설정" },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Canvas(Modifier.size(28.dp)) { slidersGlyph(c.text) }
+                }
+            }
         }
 
         Row(Modifier.fillMaxWidth().height(64.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -249,12 +262,15 @@ internal fun CockpitScreen(
                 Modifier.weight(1f).fillMaxHeight().background(c.bar, RoundedCornerShape(20.dp)).padding(horizontal = 18.dp),
                 verticalArrangement = Arrangement.Center,
             ) {
+                // 해설이 없고 멈춰 있을 때는 같은 칸에서 알아 두기 한 줄을 보여 준다
+                val idleTip = tip?.lines?.firstOrNull()?.takeIf { message == null && (still || reversing) }
                 Text(
-                    message ?: "운전자의 조작을 한 문장으로 알려 줘요",
-                    fontSize = 19.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                    color = if (message == null || messageOld) c.barMuted else c.barText,
+                    message ?: idleTip ?: "운전자의 조작을 한 문장으로 알려 줘요",
+                    fontSize = if ((message ?: idleTip ?: "").length > 30) 16.sp else 19.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    color = if (message == null && idleTip == null || messageOld) c.barMuted else c.barText,
                 )
                 if (message != null && why != null) Text(why, fontSize = 13.sp, color = c.barMuted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                else if (idleTip != null && tip != null) Text("알아 두기 · ${tip.title}", fontSize = 13.sp, color = c.barMuted, maxLines = 1)
             }
             Box(
                 Modifier.size(64.dp).background(c.ask, RoundedCornerShape(22.dp)).clickable(role = Role.Button, onClick = onAsk).semantics { contentDescription = "나중에 물어볼 것으로 표시" },
@@ -266,19 +282,6 @@ internal fun CockpitScreen(
                         Text("$asked", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = c.ask)
                     }
                 }
-            }
-            // 미리 가 보기: 출발하기 전에 오늘 갈 길을 따라가 본다
-            Box(
-                Modifier.size(64.dp).background(c.accent, RoundedCornerShape(22.dp)).clickable(role = Role.Button, onClick = onPreview).semantics { contentDescription = "미리 가 보기" },
-                contentAlignment = Alignment.Center,
-            ) {
-                Canvas(Modifier.size(34.dp)) { previewGlyph(c.onAccent) }
-            }
-            Box(
-                Modifier.size(64.dp).background(c.card, RoundedCornerShape(22.dp)).clickable(role = Role.Button, onClick = onSettings).semantics { contentDescription = "설정" },
-                contentAlignment = Alignment.Center,
-            ) {
-                Canvas(Modifier.size(28.dp)) { slidersGlyph(c.text) }
             }
         }
     }

@@ -177,7 +177,7 @@ private fun DrawScope.labels(car: LatLon, heading: Double, labels: List<MapLabel
             val w = paint.measureText(label.text)
             val box = androidx.compose.ui.geometry.Rect(s[0].toFloat() - w / 2 - 6f, s[1].toFloat() - paint.textSize - 4f, s[0].toFloat() + w / 2 + 6f, s[1].toFloat() + 6f)
             // 위쪽 안내 칸과 내 차 자리는 비워 둔다
-            if (box.top < size.height * 0.2f || box.left < 0f || box.right > size.width || used.any { it.overlaps(box) }) return@forEach
+            if (box.top < size.height * 0.2f || box.bottom > size.height * 0.93f || box.left < 0f || box.right > size.width || used.any { it.overlaps(box) }) return@forEach
             used += box
             val nc = drawContext.canvas.nativeCanvas
             paint.style = android.graphics.Paint.Style.STROKE

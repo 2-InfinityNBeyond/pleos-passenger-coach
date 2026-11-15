@@ -39,6 +39,10 @@ class RoadHub(private val cacheDir: File) {
     private val mutableState = MutableStateFlow<List<Road>>(emptyList())
     val state: StateFlow<List<Road>> = mutableState
 
+    /** 주변 지형까지 든 지도 자료. 길([state])보다 늦게 온다. 아직 없으면 null */
+    private val mutableMap = MutableStateFlow<MapData?>(null)
+    val map: StateFlow<MapData?> = mutableMap
+
     private var scope: CoroutineScope? = null
     private var job: Job? = null
 
@@ -87,6 +91,14 @@ class RoadHub(private val cacheDir: File) {
         fetchedAt = p
         mutableState.value = roads
         dlog(TAG) { "ROADS ways=${roads.size} cached=${cache.exists()}" }
+        // 길을 먼저 보여 준 뒤, 건물·녹지·물·이름까지 든 자료를 이어서 받는다(공용 서버라 수십 초 걸릴 수 있다)
+        // shortcut: 실패하면 그 자리에서는 다시 시도하지 않는다(길만 보인다), 출시 때 지도 자료 서비스로 교체
+        runCatching {
+            val terrain = File(cacheDir, "terrain_${lat}_$lon.json")
+            val body = if (terrain.exists()) terrain.readText() else post(mapQuery("$lat,$lon", TERRAIN_RADIUS_M, TERRAIN_RADIUS_M)).also { runCatching { terrain.writeText(it) } }
+            mutableMap.value = parseMap(body)
+            dlog(TAG) { "TERRAIN areas=${mutableMap.value?.areas?.size} labels=${mutableMap.value?.labels?.size}" }
+        }.onFailure { Log.w(TAG, "TERRAIN_FAILED ${it.javaClass.simpleName}: ${it.message}") }
     }
 
     /**
@@ -101,21 +113,7 @@ class RoadHub(private val cacheDir: File) {
             .map { "${(it.lat * 1000).roundToInt() / 1000.0},${(it.lon * 1000).roundToInt() / 1000.0}" }.distinct()
         val cache = File(cacheDir, "map_${line.joinToString("").hashCode()}.json")
         if (cache.exists()) return parseMap(cache.readText())
-        val l = line.joinToString(",")
-        // 길, 건물, 녹지, 물, 길 위의 시설(신호등, 단속 카메라, 과속방지턱), 학교, 역을 한 번에 받는다
-        val query = "[out:json][timeout:50];(" +
-            "way(around:$CORRIDOR_RADIUS_M,$l)[\"highway\"~\"^($KINDS)(_link)?$\"];" +
-            "way(around:$CORRIDOR_RADIUS_M,$l)[\"building\"];" +
-            "way(around:300,$l)[\"leisure\"~\"^(park|pitch|playground|garden)$\"];" +
-            "way(around:300,$l)[\"landuse\"~\"^(grass|forest|meadow|recreation_ground|cemetery|farmland)$\"];" +
-            "way(around:300,$l)[\"natural\"~\"^(water|wood|scrub)$\"];" +
-            "way(around:300,$l)[\"waterway\"~\"^(river|stream|canal)$\"];" +
-            "node(around:40,$l)[\"highway\"~\"^(traffic_signals|speed_camera)$\"];" +
-            "node(around:40,$l)[\"traffic_calming\"];" +
-            "node(around:200,$l)[\"amenity\"~\"^(school|kindergarten)$\"];" +
-            "way(around:200,$l)[\"amenity\"~\"^(school|kindergarten)$\"];" +
-            "node(around:250,$l)[\"railway\"=\"station\"];" +
-            ");out geom;"
+        val query = mapQuery(line.joinToString(","), CORRIDOR_RADIUS_M, 40)
         // 서버마다 한 번씩 시도한다(실패하면 post가 다음 서버로 넘긴다)
         var failure: Exception? = null
         repeat(SERVERS.size) {
@@ -127,6 +125,24 @@ class RoadHub(private val cacheDir: File) {
         }
         throw failure ?: IllegalStateException("no server")
     }
+
+    /**
+     * 길, 건물, 녹지, 물, 길 위의 시설(신호등, 단속 카메라, 과속방지턱), 학교, 역을 한 번에 받는 질의.
+     * [where]: 한 점("위도,경도") 또는 경로의 점들, [radius]: 길과 건물을 받을 반경, [markRadius]: 시설을 받을 반경(미터)
+     */
+    private fun mapQuery(where: String, radius: Int, markRadius: Int): String = "[out:json][timeout:50];(" +
+        "way(around:$radius,$where)[\"highway\"~\"^($KINDS)(_link)?$\"];" +
+        "way(around:$radius,$where)[\"building\"];" +
+        "way(around:${radius + 50},$where)[\"leisure\"~\"^(park|pitch|playground|garden)$\"];" +
+        "way(around:${radius + 50},$where)[\"landuse\"~\"^(grass|forest|meadow|recreation_ground|cemetery|farmland)$\"];" +
+        "way(around:${radius + 50},$where)[\"natural\"~\"^(water|wood|scrub)$\"];" +
+        "way(around:${radius + 50},$where)[\"waterway\"~\"^(river|stream|canal)$\"];" +
+        "node(around:$markRadius,$where)[\"highway\"~\"^(traffic_signals|speed_camera)$\"];" +
+        "node(around:$markRadius,$where)[\"traffic_calming\"];" +
+        "node(around:$radius,$where)[\"amenity\"~\"^(school|kindergarten)$\"];" +
+        "way(around:$radius,$where)[\"amenity\"~\"^(school|kindergarten)$\"];" +
+        "node(around:$radius,$where)[\"railway\"=\"station\"];" +
+        ");out geom;"
 
     private var server = 0
 
@@ -253,6 +269,7 @@ class RoadHub(private val cacheDir: File) {
         private const val RADIUS_M = 600
         private val NUMBER_ONLY = Regex("^[0-9A-Za-z-]+동?$")
         private const val CORRIDOR_RADIUS_M = 250
+        private const val TERRAIN_RADIUS_M = 450
         private const val CORRIDOR_POINTS = 80
 
         /** 받은 자리에서 이만큼 벗어나면 다시 받는다 */
