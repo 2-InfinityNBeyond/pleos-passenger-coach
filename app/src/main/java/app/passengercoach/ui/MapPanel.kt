@@ -58,8 +58,8 @@ internal fun MapPanel(lat: Double?, lon: Double?, heading: Double?, roads: List<
             }
             // 보행로는 가는 선으로, 철도는 짙은 선으로
             val thin = Path()
-            map.paths.forEach { band(thin, car, h, it, 2.5, 1f) }
-            drawPath(thin, c.card.copy(alpha = 0.6f))
+            map.paths.forEach { band(thin, car, h, it, 2.0, 1f) }
+            drawPath(thin, c.accent.copy(alpha = if (dark) 0.22f else 0.14f))
             val rail = Path()
             map.rails.forEach { band(rail, car, h, it, 4.0, 1.5f) }
             drawPath(rail, if (dark) Color(0xFF55546E) else Color(0xFF9D9CB4))

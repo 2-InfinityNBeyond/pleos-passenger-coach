@@ -179,19 +179,7 @@ internal fun CockpitScreen(
                 // 글자를 줄이려고 알아 두기는 첫 줄만 보여 준다(두 줄 모두는 이전 화면에서 볼 수 있다)
                 // 달리는 중에는 지도를 가리지 않게 알아 두기를 띄우지 않는다(멈췄을 때와 후진할 때만)
             val tipLines = tip?.lines?.take(1)?.takeIf { still || reversing }
-                // 알아 두기는 지도를 가리지 않게 아래 해설 칸에서 보여 준다(해설이 없을 때)
-                if (recap.size >= 2) {
-                    Column(
-                        Modifier.widthIn(max = 330.dp).background(c.card.copy(alpha = 0.96f), RoundedCornerShape(18.dp)).padding(horizontal = 14.dp, vertical = 10.dp),
-                        verticalArrangement = Arrangement.spacedBy(2.dp),
-                    ) {
-                        Text("방금 한 조작", fontSize = 13.sp, color = c.muted)
-                        recap.forEachIndexed { i, text ->
-                            Text("${i + 1}. $text", fontSize = 15.sp, color = c.text, fontWeight = if (i == recap.lastIndex) FontWeight.Bold else FontWeight.Normal)
-                        }
-                        if (asked > 0) Text("물어볼 것 ${asked}개 · 설정에서 볼 수 있어요", fontSize = 13.sp, color = c.accent, fontWeight = FontWeight.Bold)
-                    }
-                }
+                // 방금 한 조작과 알아 두기는 지도를 가리지 않게 아래 해설 칸에서 보여 준다
             }
 
             if (noSignal) {
@@ -220,6 +208,12 @@ internal fun CockpitScreen(
                 // 해설이 없고 멈춰 있을 때는 같은 칸에서 알아 두기 한 줄을 보여 준다
                 // 같은 말만 되풀이하지 않게 몇 초마다 다음 요령으로 넘긴다
                 val idleTip = tip?.lines?.let { it.getOrNull(((now / 9_000) % it.size.coerceAtLeast(1)).toInt()) }?.takeIf { message == null && (still || reversing) }
+                // 멈춰 있고 방금 해설이 지나갔으면, 같은 칸에서 방금 한 조작을 순서대로 되짚는다
+                val recapText = recap.takeIf { it.size >= 2 && (message == null || messageOld) }?.mapIndexed { i, text -> "${i + 1}. ${text.removeSuffix(".")}" }?.joinToString("   ")
+                if (recapText != null) {
+                    Text("방금 한 조작", fontSize = 14.sp, color = c.barMuted)
+                    Text(recapText, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = c.barText, maxLines = 3, lineHeight = 22.sp)
+                } else {
                 Text(
                     message ?: idleTip ?: "운전자의 조작을 한 문장으로 알려 줘요",
                     fontSize = if ((message ?: idleTip ?: "").length > 30) 17.sp else 19.sp, fontWeight = FontWeight.Bold, maxLines = 2, lineHeight = 24.sp,
@@ -227,6 +221,7 @@ internal fun CockpitScreen(
                 )
                 if (message != null && why != null) Text(why, fontSize = 15.sp, color = c.barMuted, maxLines = 2, lineHeight = 20.sp)
                 else if (idleTip != null && tip != null) Text("알아 두기 · ${tip.title}", fontSize = 15.sp, color = c.barMuted, maxLines = 1)
+                }
             }
             Box(
                 Modifier.size(64.dp).background(c.ask, RoundedCornerShape(22.dp)).clickable(role = Role.Button, onClick = onAsk).semantics { contentDescription = "나중에 물어볼 것으로 표시" },
