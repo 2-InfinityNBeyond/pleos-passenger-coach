@@ -229,7 +229,7 @@ internal fun CockpitScreen(
             if (parked) {
                 Row(
                     Modifier.height(64.dp).guideRegion("PREVIEW", onRegion).background(c.accent, RoundedCornerShape(22.dp)).clickable(role = Role.Button, onClick = onPreview)
-                        .padding(horizontal = if (compact) 15.dp else 16.dp).semantics { contentDescription = "미리 가 보기: 출발 전에 오늘의 경로를 먼저 주행해 봅니다" },
+                        .padding(horizontal = if (compact) 15.dp else 16.dp).semantics { contentDescription = "미리 가 보기: 내비에 설정한 목적지까지의 경로를 출발 전에 미리 주행해 봅니다" },
                     horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Canvas(Modifier.size(32.dp)) { previewGlyph(c.onAccent) }
