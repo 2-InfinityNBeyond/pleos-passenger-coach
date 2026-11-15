@@ -280,6 +280,7 @@ private fun CoachApp(hub: SignalHub, navi: NaviHub, lights: TrafficLightHub, rou
     }
     LaunchedEffect(naviSnapshot.lat, naviSnapshot.lon, demoOn) { if (!demoOn) roads.onLocation(naviSnapshot.lat, naviSnapshot.lon) }
 
+    val regions = remember { androidx.compose.runtime.mutableStateMapOf<String, androidx.compose.ui.geometry.Rect>() }
     val engine = remember(demoOn) { CoachEngine() }
     engine.onPlace(nearPlace)
     var message by remember(demoOn) { mutableStateOf<String?>(null) }
@@ -363,10 +364,6 @@ private fun CoachApp(hub: SignalHub, navi: NaviHub, lights: TrafficLightHub, rou
         )
         Page.RECORDS -> RecordsScreen(records, "학습 기록", "설정에서 학습 기록을 켜면 해설이 여기에 쌓여요.", onBack = { page = Page.SETTINGS })
         Page.ASKS -> RecordsScreen(asks, "물어볼 것", "주행 화면의 ? 버튼을 누르면 그 순간이 여기에 남아요.", onBack = { page = Page.SETTINGS }, onCleared = { asked = 0 })
-        Page.GUIDE -> GuideScreen(onDone = {
-            prefs.edit().putBoolean("guide_seen", true).apply()
-            page = Page.MAIN
-        })
         Page.PREVIEW -> {
             // 실제 내비의 현재 위치와 목적지로 길을 받는다(데모 중이어도 데모 값은 쓰지 않는다)
             val real = remember { navi.state.value }
@@ -376,7 +373,9 @@ private fun CoachApp(hub: SignalHub, navi: NaviHub, lights: TrafficLightHub, rou
                 routes = routes, roads = roads, onClose = { page = Page.MAIN },
             )
         }
-        Page.MAIN -> {
+        // 안내는 실제 주행 화면 위에 덮어 보여 주므로 주행 화면과 같은 가지에서 그린다
+        Page.MAIN, Page.GUIDE -> {
+            val guiding = page == Page.GUIDE
             // 오래된 해설을 지금 일처럼 보이지 않게: 잠시 뒤 흐리게, 더 지나면 지운다
             val shownMessage = message.takeIf { now - messageAtMs < MESSAGE_CLEAR_MS }
             // 코치 모드: 강사가 직접 설명하므로 설명 줄과 알아 두기를 숨긴다
@@ -398,7 +397,7 @@ private fun CoachApp(hub: SignalHub, navi: NaviHub, lights: TrafficLightHub, rou
                     demoOn = !demoOn
                 }
             }
-            if (classicUi) {
+            if (classicUi && !guiding) {
                 CoachScreen(
                     s = signals, n = naviSnapshot, light = light, message = shownMessage, why = shownWhy, recap = shownRecap, tip = shownTip,
                     messageOld = messageOld, demoOn = demoOn, now = now, onRetry = onRetry, onTitleTap = onDemoTap, onSettings = { page = Page.SETTINGS },
@@ -407,7 +406,7 @@ private fun CoachApp(hub: SignalHub, navi: NaviHub, lights: TrafficLightHub, rou
                 CockpitScreen(
                     s = signals, n = naviSnapshot, light = light, roads = roadList, map = mapData, route = route, message = shownMessage, why = shownWhy, messageOld = messageOld,
                     recap = shownRecap, tip = shownTip, still = still, demoOn = demoOn, now = now, asked = asked,
-                    onRetry = onRetry, onDemoTap = onDemoTap, onSettings = { page = Page.SETTINGS }, onPreview = { page = Page.PREVIEW },
+                    onRetry = onRetry, onDemoTap = onDemoTap, onSettings = { page = Page.SETTINGS }, onPreview = { page = Page.PREVIEW }, onRegion = if (guiding) { key, rect -> regions[key] = rect } else null,
                     onAsk = {
                         // 그 순간에 보이던 해설을 남긴다. 해설이 없으면 시각만 남는다
                         val at = System.currentTimeMillis()
@@ -416,6 +415,10 @@ private fun CoachApp(hub: SignalHub, navi: NaviHub, lights: TrafficLightHub, rou
                     },
                 )
             }
+            if (guiding) GuideOverlay(regions, onDone = {
+                prefs.edit().putBoolean("guide_seen", true).apply()
+                page = Page.MAIN
+            })
         }
     }
 }

@@ -122,6 +122,7 @@ internal fun CockpitScreen(
     onSettings: () -> Unit,
     onAsk: () -> Unit,
     onPreview: () -> Unit,
+    onRegion: ((String, androidx.compose.ui.geometry.Rect) -> Unit)? = null,
 ) {
     val dark = isSystemInDarkTheme()
     val c = if (dark) Night else Day
@@ -135,7 +136,7 @@ internal fun CockpitScreen(
     BoxWithConstraints(Modifier.fillMaxSize().background(c.bg)) {
     val compact = maxWidth < 600.dp
     Column(Modifier.fillMaxSize().padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Box(Modifier.weight(1f).fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(c.mapBase)) {
+        Box(Modifier.weight(1f).fillMaxWidth().guideRegion("MAP", onRegion).clip(RoundedCornerShape(24.dp)).background(c.mapBase)) {
             if (reversing) {
                 RearView(s.steeringDeg ?: 0f, moving = s.brakeOn == false, demo = demoOn, modifier = Modifier.fillMaxSize())
             } else {
@@ -202,7 +203,7 @@ internal fun CockpitScreen(
         // 글자가 길면 잘라 내지 않고 칸이 두 줄로 늘어난다(그만큼 지도가 조금 줄어든다)
         Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(
-                Modifier.weight(1f).fillMaxHeight().heightIn(min = 72.dp).background(c.bar, RoundedCornerShape(20.dp)).padding(horizontal = 18.dp, vertical = 8.dp),
+                Modifier.weight(1f).fillMaxHeight().heightIn(min = 72.dp).guideRegion("BAR", onRegion).background(c.bar, RoundedCornerShape(20.dp)).padding(horizontal = 18.dp, vertical = 8.dp),
                 verticalArrangement = Arrangement.Center,
             ) {
                 // 해설이 없고 멈춰 있을 때는 같은 칸에서 알아 두기 한 줄을 보여 준다
@@ -224,7 +225,7 @@ internal fun CockpitScreen(
                 }
             }
             Box(
-                Modifier.size(64.dp).background(c.ask, RoundedCornerShape(22.dp)).clickable(role = Role.Button, onClick = onAsk).semantics { contentDescription = "나중에 물어볼 것으로 표시" },
+                Modifier.size(64.dp).guideRegion("ASK", onRegion).background(c.ask, RoundedCornerShape(22.dp)).clickable(role = Role.Button, onClick = onAsk).semantics { contentDescription = "나중에 물어볼 것으로 표시" },
                 contentAlignment = Alignment.Center,
             ) {
                 Text("?", fontSize = 30.sp, fontWeight = FontWeight.Black, color = c.askText)
@@ -238,18 +239,18 @@ internal fun CockpitScreen(
 
         Row(Modifier.fillMaxWidth().height(142.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(
-                Modifier.weight(1f).fillMaxHeight().background(c.card, RoundedCornerShape(24.dp)).padding(horizontal = 14.dp),
-                horizontalArrangement = Arrangement.spacedBy(if (compact) 8.dp else 18.dp, Alignment.CenterHorizontally), verticalAlignment = Alignment.CenterVertically,
+                Modifier.weight(1f).fillMaxHeight().guideRegion("WHEEL", onRegion).background(c.card, RoundedCornerShape(24.dp)).padding(horizontal = if (compact) 6.dp else 14.dp),
+                horizontalArrangement = Arrangement.spacedBy(if (compact) 4.dp else 18.dp, Alignment.CenterHorizontally), verticalAlignment = Alignment.CenterVertically,
             ) {
                 val blink = (now / 500) % 2 == 0L
                 val both = s.turn != null && s.turn != TurnSignalValue.LEFT && s.turn != TurnSignalValue.RIGHT && s.turn != TurnSignalValue.OFF
-                Blinker(left = true, on = s.turn == TurnSignalValue.LEFT || both, lit = blink, c = c)
-                CockpitWheel(s.steeringDeg, if (compact) 100.dp else 126.dp, if (stale) c.offGlyph else c.text, c.accent)
-                Blinker(left = false, on = s.turn == TurnSignalValue.RIGHT || both, lit = blink, c = c)
+                Blinker(left = true, on = s.turn == TurnSignalValue.LEFT || both, lit = blink, c = c, diameter = if (compact) 38.dp else 54.dp)
+                CockpitWheel(s.steeringDeg, if (compact) 76.dp else 126.dp, if (stale) c.offGlyph else c.text, c.accent)
+                Blinker(left = false, on = s.turn == TurnSignalValue.RIGHT || both, lit = blink, c = c, diameter = if (compact) 38.dp else 54.dp)
                 if (!compact) AngleReadout(s.steeringDeg, c)
             }
             Column(
-                Modifier.width(92.dp).fillMaxHeight().background(c.card, RoundedCornerShape(24.dp)),
+                Modifier.width(if (compact) 72.dp else 92.dp).fillMaxHeight().guideRegion("BRAKE", onRegion).background(c.card, RoundedCornerShape(24.dp)),
                 horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterVertically),
             ) {
                 val on = s.brakeOn == true
@@ -258,7 +259,7 @@ internal fun CockpitScreen(
             }
             // 기어 칸을 5번 누르면 데모(시험 자료)가 켜지고 꺼진다
             Column(
-                Modifier.width(60.dp).fillMaxHeight().background(c.card, RoundedCornerShape(24.dp)).clickable(onClick = onDemoTap),
+                Modifier.width(60.dp).fillMaxHeight().guideRegion("GEAR", onRegion).background(c.card, RoundedCornerShape(24.dp)).clickable(onClick = onDemoTap),
                 horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(2.dp, Alignment.CenterVertically),
             ) {
                 listOf(VehicleGear.GEAR_PARK to "P", VehicleGear.GEAR_REVERSE to "R", VehicleGear.GEAR_NEUTRAL to "N", VehicleGear.GEAR_DRIVE to "D").forEach { (gear, label) ->
@@ -271,13 +272,13 @@ internal fun CockpitScreen(
             // 미리 가 보기와 설정은 출발 전에 쓰는 것이라 해설 칸 옆이 아니라 여기에 둔다(해설 칸을 넓게 쓰려고)
             Column(Modifier.width(60.dp).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Box(
-                    Modifier.weight(1f).fillMaxWidth().background(c.accent, RoundedCornerShape(22.dp)).clickable(role = Role.Button, onClick = onPreview).semantics { contentDescription = "미리 가 보기" },
+                    Modifier.weight(1f).fillMaxWidth().guideRegion("PREVIEW", onRegion).background(c.accent, RoundedCornerShape(22.dp)).clickable(role = Role.Button, onClick = onPreview).semantics { contentDescription = "미리 가 보기" },
                     contentAlignment = Alignment.Center,
                 ) {
                     Canvas(Modifier.size(34.dp)) { previewGlyph(c.onAccent) }
                 }
                 Box(
-                    Modifier.weight(1f).fillMaxWidth().background(c.card, RoundedCornerShape(22.dp)).clickable(role = Role.Button, onClick = onSettings).semantics { contentDescription = "설정" },
+                    Modifier.weight(1f).fillMaxWidth().guideRegion("SETTINGS", onRegion).background(c.card, RoundedCornerShape(22.dp)).clickable(role = Role.Button, onClick = onSettings).semantics { contentDescription = "설정" },
                     contentAlignment = Alignment.Center,
                 ) {
                     Canvas(Modifier.size(28.dp)) { slidersGlyph(c.text) }
@@ -365,9 +366,9 @@ private fun SpeedSign(limit: Int, c: CockpitColors) {
 }
 
 @Composable
-internal fun Blinker(left: Boolean, on: Boolean, lit: Boolean, c: CockpitColors) {
+internal fun Blinker(left: Boolean, on: Boolean, lit: Boolean, c: CockpitColors, diameter: Dp = 54.dp) {
     val bright = on && lit
-    Canvas(Modifier.size(54.dp).semantics { contentDescription = (if (left) "왼쪽" else "오른쪽") + " 방향지시등 " + if (on) "켜짐" else "꺼짐" }) {
+    Canvas(Modifier.size(diameter).semantics { contentDescription = (if (left) "왼쪽" else "오른쪽") + " 방향지시등 " + if (on) "켜짐" else "꺼짐" }) {
         drawCircle(if (on) c.greenBg else c.off)
         val k = size.width / 54f
         val arrow = Path().apply {
